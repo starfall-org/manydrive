@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'package:manydrive/app/app.dart';
-import 'package:manydrive/app/common/permissions.dart';
+import 'package:manydrive/core/utils/permissions.dart';
+import 'package:manydrive/features/drive/presentation/pages/home_page.dart';
+import 'package:manydrive/injection_container.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Làm cho thanh trạng thái và thanh điều hướng trong suốt
+  // Initialize dependency injection
+  await injector.init();
+
+  // Make status bar and navigation bar transparent
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -18,25 +22,25 @@ void main() {
     ),
   );
 
-  // Cho phép UI tràn lên vùng thanh trạng thái và thanh điều hướng
-  SystemChrome.setEnabledSystemUIMode(
-    SystemUiMode.edgeToEdge,
-  );
+  // Allow UI to extend into status bar and navigation bar areas
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
+  // Request permissions
   requestPermissions();
 
-  runApp(_Main());
+  runApp(const ManyDriveApp());
 }
 
-class _Main extends StatelessWidget {
+class ManyDriveApp extends StatelessWidget {
+  const ManyDriveApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'ManyDrive',
-      home: Builder(
-        builder: (context) {
-          return App();
-        },
+      home: HomePage(
+        driveRepository: injector.driveRepository,
+        credentialRepository: injector.credentialRepository,
       ),
     );
   }
