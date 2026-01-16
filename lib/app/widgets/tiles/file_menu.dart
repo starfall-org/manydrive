@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:manydrive/app/common/notification.dart';
+import 'package:manydrive/app/common/snackbar.dart';
 import 'package:manydrive/app/models/file_model.dart';
 import 'package:manydrive/app/services/gdrive.dart';
 import 'package:manydrive/app/services/notification_service.dart';
@@ -16,7 +16,7 @@ class FileMenuWidget extends StatefulWidget {
     required this.gds,
     required this.tabKey,
   });
-  
+
   @override
   State<FileMenuWidget> createState() => _FileMenuState();
 }
@@ -49,10 +49,7 @@ class _FileMenuState extends State<FileMenuWidget> {
   void _delete() {
     try {
       widget.fileModel.delete();
-      showSuccessSnackBar(
-        context,
-        'File deleted successfully',
-      );
+      showSuccessSnackBar(context, 'File deleted successfully');
       widget.gds.refresh(widget.tabKey);
     } catch (e) {
       showErrorSnackBar(
@@ -67,12 +64,12 @@ class _FileMenuState extends State<FileMenuWidget> {
     final notificationService = NotificationService();
     final notificationId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final fileName = widget.fileModel.file.name ?? 'file';
-    
+
     try {
       // Initialize notification service
       await notificationService.initialize();
-      
-      // Show starting notification
+
+      // Show starting notification (cannot be dismissed)
       await notificationService.showProgress(
         id: notificationId,
         title: 'Downloading',
@@ -80,9 +77,9 @@ class _FileMenuState extends State<FileMenuWidget> {
         progress: 0,
         maxProgress: 100,
       );
-      
+
       // Perform download
-      final downloadedFile = await widget.fileModel.download(
+      final _ = await widget.fileModel.download(
         onProgress: (progress) async {
           await notificationService.showProgress(
             id: notificationId,
@@ -93,19 +90,17 @@ class _FileMenuState extends State<FileMenuWidget> {
           );
         },
       );
-      
-      // Cancel progress notification
-      await notificationService.cancel(notificationId);
-      
-      // Show completion notification
-      await notificationService.showDownloadComplete(
-        fileName: fileName,
-        filePath: downloadedFile?.path ?? '/downloads/$fileName',
+
+      // Show completion notification (can be dismissed)
+      await notificationService.showTransferComplete(
+        id: notificationId,
+        title: '✅ Download Complete',
+        body: 'Downloaded: $fileName',
       );
     } catch (e) {
       // Cancel progress notification
       await notificationService.cancel(notificationId);
-      
+
       // Show error notification
       await notificationService.showError(
         title: 'Download Failed',

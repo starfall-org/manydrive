@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:chewie/chewie.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
-import 'package:manydrive/app/common/notification.dart';
+import 'package:manydrive/app/common/snackbar.dart';
 import 'package:manydrive/app/models/file_model.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,11 +14,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final FileModel fileModel;
   final List<FileModel>? allFiles;
 
-  const VideoPlayerWidget({
-    super.key,
-    required this.fileModel,
-    this.allFiles,
-  });
+  const VideoPlayerWidget({super.key, required this.fileModel, this.allFiles});
 
   @override
   VideoPlayerWidgetState createState() => VideoPlayerWidgetState();
@@ -30,7 +26,7 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   int _currentIndex = 0;
   bool _isLoading = true;
   bool _autoPlayNext = true;
-  
+
   // Cache cho video players
   final Map<int, VideoPlayerController> _videoControllers = {};
   final Map<int, ChewieController> _chewieControllers = {};
@@ -58,34 +54,37 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     try {
       // Nếu có allFiles được truyền vào, lọc video từ đó
       if (widget.allFiles != null && widget.allFiles!.isNotEmpty) {
-        _videoFiles = widget.allFiles!
-            .where((file) => file.file.mimeType?.startsWith('video/') == true)
-            .toList();
+        _videoFiles =
+            widget.allFiles!
+                .where(
+                  (file) => file.file.mimeType?.startsWith('video/') == true,
+                )
+                .toList();
       } else {
         // Nếu không có, chỉ dùng video hiện tại
         _videoFiles = [widget.fileModel];
       }
-      
+
       // Tìm index của video hiện tại
       _currentIndex = _videoFiles.indexWhere(
         (file) => file.file.id == widget.fileModel.file.id,
       );
-      
+
       if (_currentIndex == -1) {
         _currentIndex = 0;
         _videoFiles = [widget.fileModel];
       }
-      
+
       // Khởi tạo PageController với index hiện tại
       _pageController = PageController(initialPage: _currentIndex);
-      
+
       setState(() {
         _isLoading = false;
       });
-      
+
       // Khởi tạo player cho video hiện tại
       await _initializePlayer(_currentIndex);
-      
+
       // Preload video tiếp theo nếu có
       if (_currentIndex < _videoFiles.length - 1) {
         _preloadPlayer(_currentIndex + 1);
@@ -103,14 +102,15 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
 
   Future<void> _initializePlayer(int index) async {
     // Nếu đã có controller, không cần tạo lại
-    if (_videoControllers.containsKey(index) && 
+    if (_videoControllers.containsKey(index) &&
         _videoControllers[index]!.value.isInitialized) {
       return;
     }
 
     try {
       final videoData = await _videoFiles[index].getBytes();
-      final cacheKey = _videoFiles[index].file.id ?? _generateCacheKey(videoData);
+      final cacheKey =
+          _videoFiles[index].file.id ?? _generateCacheKey(videoData);
 
       final cachedFile = await _getCachedVideo(cacheKey);
 
@@ -123,7 +123,7 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       }
 
       await videoController.initialize();
-      
+
       // Thêm listener sau khi initialize để tránh lỗi
       if (mounted) {
         videoController.addListener(() => _checkVideoEnd(index));
@@ -159,7 +159,7 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   Future<void> _preloadPlayer(int index) async {
     if (index < 0 || index >= _videoFiles.length) return;
     if (_videoControllers.containsKey(index)) return;
-    
+
     await _initializePlayer(index);
   }
 
@@ -208,7 +208,7 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
 
   void _checkVideoEnd(int index) {
     if (!_videoControllers.containsKey(index)) return;
-    
+
     final controller = _videoControllers[index]!;
     if (!controller.value.isInitialized) return;
 
@@ -235,19 +235,19 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     setState(() {
       _currentIndex = index;
     });
-    
+
     // Pause video trước
     for (var i = 0; i < _videoFiles.length; i++) {
       if (i != index && _videoControllers.containsKey(i)) {
         _videoControllers[i]!.pause();
       }
     }
-    
+
     // Play video hiện tại
     if (_videoControllers.containsKey(index)) {
       _videoControllers[index]!.play();
     }
-    
+
     // Preload video tiếp theo
     if (index < _videoFiles.length - 1) {
       _preloadPlayer(index + 1);
@@ -282,14 +282,17 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                 return Container(
                   color: Colors.black,
                   child: Center(
-                    child: _chewieControllers.containsKey(index)
-                        ? Chewie(controller: _chewieControllers[index]!)
-                        : const CircularProgressIndicator(color: Colors.white),
+                    child:
+                        _chewieControllers.containsKey(index)
+                            ? Chewie(controller: _chewieControllers[index]!)
+                            : const CircularProgressIndicator(
+                              color: Colors.white,
+                            ),
                   ),
                 );
               },
             ),
-            
+
             // Top bar với indicator và nút autoplay
             Positioned(
               top: 0,
@@ -307,7 +310,10 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                   ),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -332,7 +338,7 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                         )
                       else
                         const SizedBox.shrink(),
-                      
+
                       // Autoplay toggle button
                       if (_videoFiles.length > 1)
                         Container(
@@ -342,26 +348,27 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                           ),
                           child: IconButton(
                             icon: Icon(
-                              _autoPlayNext 
-                                  ? Icons.playlist_play 
+                              _autoPlayNext
+                                  ? Icons.playlist_play
                                   : Icons.playlist_remove,
                               color: Colors.white,
                             ),
-                            tooltip: _autoPlayNext 
-                                ? 'Autoplay: ON' 
-                                : 'Autoplay: OFF',
+                            tooltip:
+                                _autoPlayNext
+                                    ? 'Autoplay: ON'
+                                    : 'Autoplay: OFF',
                             onPressed: () {
                               setState(() {
                                 _autoPlayNext = !_autoPlayNext;
                               });
                               _saveAutoPlaySetting(_autoPlayNext);
-                              
+
                               // Show snackbar
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    _autoPlayNext 
-                                        ? 'Autoplay enabled' 
+                                    _autoPlayNext
+                                        ? 'Autoplay enabled'
                                         : 'Autoplay disabled',
                                   ),
                                   duration: const Duration(seconds: 1),
@@ -385,7 +392,7 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   @override
   void dispose() {
     _pageController.dispose();
-    
+
     // Dispose tất cả controllers
     for (var controller in _videoControllers.values) {
       controller.dispose();
@@ -393,10 +400,10 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     for (var controller in _chewieControllers.values) {
       controller.dispose();
     }
-    
+
     _videoControllers.clear();
     _chewieControllers.clear();
-    
+
     super.dispose();
   }
 }

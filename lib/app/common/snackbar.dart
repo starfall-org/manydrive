@@ -1,11 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum SnackBarType {
-  success,
-  error,
-  warning,
-  info,
-}
+enum SnackBarType { success, error, warning, info }
 
 class SnackBarConfig {
   final IconData icon;
@@ -55,11 +50,7 @@ void showSnackBar(
     SnackBar(
       content: Row(
         children: [
-          Icon(
-            config.icon,
-            color: config.iconColor,
-            size: 24,
-          ),
+          Icon(config.icon, color: config.iconColor, size: 24),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -126,62 +117,5 @@ void showWarningSnackBar(
     type: SnackBarType.warning,
     duration: duration,
     action: action,
-  );
-}
-
-void showProgressSnackBar(
-  BuildContext context,
-  String message,
-  double progress,
-) {
-  final percentage = (progress * 100).toInt();
-
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Row(
-        children: [
-          SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              value: progress,
-              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-              strokeWidth: 3,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  message,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '$percentage%',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-      backgroundColor: const Color(0xFF2196F3),
-      duration: const Duration(milliseconds: 800),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      margin: const EdgeInsets.all(16),
-      elevation: 6,
-    ),
   );
 }

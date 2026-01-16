@@ -19,7 +19,9 @@ class NotificationService {
     if (_initialized) return;
 
     // Android settings
-    const androidSettings = AndroidInitializationSettings('@mipmap/launcher_icon');
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/launcher_icon',
+    );
 
     // iOS settings
     const iosSettings = DarwinInitializationSettings(
@@ -105,9 +107,7 @@ class NotificationService {
   }
 
   /// Upload complete notification
-  Future<void> showUploadComplete({
-    required String fileName,
-  }) async {
+  Future<void> showUploadComplete({required String fileName}) async {
     await showNotification(
       id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       title: '✅ Upload Complete',
@@ -116,9 +116,7 @@ class NotificationService {
   }
 
   /// Delete complete notification
-  Future<void> showDeleteComplete({
-    required String fileName,
-  }) async {
+  Future<void> showDeleteComplete({required String fileName}) async {
     await showNotification(
       id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       title: '🗑️ File Deleted',
@@ -161,7 +159,7 @@ class NotificationService {
     );
   }
 
-  /// Progress notification (for ongoing tasks)
+  /// Progress notification (for ongoing tasks - cannot be dismissed)
   Future<void> showProgress({
     required int id,
     required String title,
@@ -171,17 +169,20 @@ class NotificationService {
   }) async {
     if (!_initialized) await initialize();
 
+    final isComplete = progress >= maxProgress;
+
     final androidDetails = AndroidNotificationDetails(
       'progress_channel',
       'Task Progress',
       channelDescription: 'Shows progress of ongoing tasks',
       importance: Importance.low,
       priority: Priority.low,
-      showProgress: true,
+      showProgress: !isComplete,
       maxProgress: maxProgress,
       progress: progress,
-      ongoing: progress < maxProgress,
+      ongoing: !isComplete, // Không thể quét đi khi chưa hoàn thành
       autoCancel: false,
+      onlyAlertOnce: true, // Không phát âm thanh mỗi lần cập nhật
     );
 
     const iosDetails = DarwinNotificationDetails(
@@ -191,6 +192,38 @@ class NotificationService {
     );
 
     final details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    await _notifications.show(id, title, body, details);
+  }
+
+  /// Show upload/download complete notification (can be dismissed)
+  Future<void> showTransferComplete({
+    required int id,
+    required String title,
+    required String body,
+  }) async {
+    if (!_initialized) await initialize();
+
+    const androidDetails = AndroidNotificationDetails(
+      'progress_channel',
+      'Task Progress',
+      channelDescription: 'Shows progress of ongoing tasks',
+      importance: Importance.high,
+      priority: Priority.high,
+      ongoing: false, // Có thể quét đi
+      autoCancel: true,
+    );
+
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    const details = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
     );

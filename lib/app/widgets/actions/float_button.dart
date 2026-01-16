@@ -24,12 +24,12 @@ class _FloatButtonsState extends State<FloatButtons> {
         final notificationId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
         final fileName = result.files.single.name;
         final fileSize = result.files.single.size;
-        
+
         try {
           // Initialize notification service
           await notificationService.initialize();
-          
-          // Show starting notification
+
+          // Show starting notification (cannot be dismissed)
           await notificationService.showProgress(
             id: notificationId,
             title: 'Uploading',
@@ -37,9 +37,9 @@ class _FloatButtonsState extends State<FloatButtons> {
             progress: 0,
             maxProgress: 100,
           );
-          
+
           int uploadedBytes = 0;
-          
+
           // Perform upload with progress
           await widget.gds.upload(
             filePath,
@@ -56,21 +56,20 @@ class _FloatButtonsState extends State<FloatButtons> {
               );
             },
           );
-          
-          // Cancel progress notification
-          await notificationService.cancel(notificationId);
-          
-          // Show completion notification
-          await notificationService.showUploadComplete(
-            fileName: fileName,
+
+          // Show completion notification (can be dismissed)
+          await notificationService.showTransferComplete(
+            id: notificationId,
+            title: '✅ Upload Complete',
+            body: 'Uploaded: $fileName',
           );
-          
+
           // Refresh file list
           widget.gds.refresh(widget.tabKey);
         } catch (e) {
           // Cancel progress notification
           await notificationService.cancel(notificationId);
-          
+
           // Show error notification
           await notificationService.showError(
             title: 'Upload Failed',

@@ -121,7 +121,7 @@ class SideMenuState extends State<SideMenu> {
                         ),
                       ),
                     )
-                    .toList(),
+                    ,
                 const DropdownMenuItem<String>(
                   value: '__add_account__',
                   child: Row(
