@@ -22,16 +22,20 @@ class FileViewerPage {
     this.allFiles,
   });
 
-  void open() {
+  Future<DriveFile?> open() async {
     if (file.isImage) {
       _viewImage();
+      return null;
     } else if (file.isVideo) {
-      _playVideo();
+      return await _playVideo();
     } else if (file.isAudio) {
       _playAudio();
+      return null;
     } else if (file.isText) {
       _viewText();
+      return null;
     }
+    return null;
   }
 
   void _viewImage() {
@@ -72,8 +76,8 @@ class FileViewerPage {
     );
   }
 
-  void _playVideo() {
-    Navigator.push(
+  Future<DriveFile?> _playVideo() async {
+    final result = await Navigator.push<DriveFile>(
       context,
       PageRouteBuilder(
         pageBuilder:
@@ -89,6 +93,7 @@ class FileViewerPage {
         reverseTransitionDuration: const Duration(milliseconds: 200),
       ),
     );
+    return result;
   }
 
   void _playAudio() {

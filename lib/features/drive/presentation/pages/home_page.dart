@@ -97,16 +97,28 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _onFileOpen(DriveFile file, String tabKey, List<DriveFile> allFiles) {
+  void _onFileOpen(
+    DriveFile file,
+    String tabKey,
+    List<DriveFile> allFiles,
+  ) async {
     if (file.isFolder) {
       _driveState.listFiles(folderId: file.id, tabKey: tabKey);
     } else {
-      FileViewerPage(
-        context: context,
-        file: file,
-        driveRepository: widget.driveRepository,
-        allFiles: allFiles,
-      ).open();
+      final lastViewedFile =
+          await FileViewerPage(
+            context: context,
+            file: file,
+            driveRepository: widget.driveRepository,
+            allFiles: allFiles,
+          ).open();
+
+      // Nếu có file được trả về (từ video player), select và scroll đến file đó
+      if (lastViewedFile != null && mounted) {
+        final fileListKey =
+            tabKey == 'home' ? _homeFileListKey : _sharedFileListKey;
+        fileListKey.currentState?.selectAndScrollToFile(lastViewedFile);
+      }
     }
   }
 

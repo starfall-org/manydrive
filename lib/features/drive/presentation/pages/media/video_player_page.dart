@@ -135,6 +135,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         looping: false,
         autoInitialize: true,
         showControlsOnInitialize: false,
+        errorBuilder: (context, errorMessage) {
+          return const SizedBox.shrink();
+        },
         additionalOptions: (context) {
           return [
             OptionItem(
@@ -242,58 +245,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
     if (_videoControllers.containsKey(index)) {
       _videoControllers[index]!.play();
-
-      // Cập nhật ChewieController với showControlsOnInitialize: false
-      if (_chewieControllers.containsKey(index)) {
-        final oldController = _chewieControllers[index]!;
-        final videoController = _videoControllers[index]!;
-
-        oldController.dispose();
-
-        final newChewieController = ChewieController(
-          videoPlayerController: videoController,
-          aspectRatio:
-              videoController.value.aspectRatio > 0
-                  ? videoController.value.aspectRatio
-                  : 9 / 16,
-          autoPlay: true,
-          looping: false,
-          autoInitialize: true,
-          showControlsOnInitialize: false,
-          additionalOptions: (context) {
-            return [
-              OptionItem(
-                onTap: (ctx) {
-                  Navigator.of(ctx).pop();
-                  setState(() => _autoPlayNext = !_autoPlayNext);
-                  _saveAutoPlaySetting(_autoPlayNext);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        _autoPlayNext
-                            ? 'Tự động chuyển tiếp: BẬT'
-                            : 'Tự động chuyển tiếp: TẮT',
-                      ),
-                      duration: const Duration(seconds: 1),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                },
-                iconData:
-                    _autoPlayNext ? Icons.playlist_play : Icons.playlist_remove,
-                title:
-                    _autoPlayNext
-                        ? 'Tắt tự động chuyển tiếp'
-                        : 'Bật tự động chuyển tiếp',
-              ),
-            ];
-          },
-        );
-
-        setState(() {
-          _chewieControllers[index] = newChewieController;
-        });
-      }
     }
 
     if (index < _videoFiles.length - 1) _preloadPlayer(index + 1);
@@ -306,77 +257,40 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       return const Scaffold(backgroundColor: Colors.black);
     }
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            PageView.builder(
-              controller: _pageController,
-              onPageChanged: _onPageChanged,
-              itemCount: _videoFiles.length,
-              itemBuilder:
-                  (context, index) => Container(
-                    color: Colors.black,
-                    child:
-                        _chewieControllers.containsKey(index)
-                            ? Chewie(controller: _chewieControllers[index]!)
-                            : const Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop &&
+            _currentIndex >= 0 &&
+            _currentIndex < _videoFiles.length) {
+          // Trả về file video cuối cùng đang xem
+          Navigator.of(context).pop(_videoFiles[_currentIndex]);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: SafeArea(
+          child: Stack(
+            children: [
+              PageView.builder(
+                controller: _pageController,
+                onPageChanged: _onPageChanged,
+                itemCount: _videoFiles.length,
+                itemBuilder:
+                    (context, index) => Container(
+                      color: Colors.black,
+                      child:
+                          _chewieControllers.containsKey(index)
+                              ? Chewie(controller: _chewieControllers[index]!)
+                              : const Center(
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                ),
                               ),
-                            ),
-                  ),
-            ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.7),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 8,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      if (_videoFiles.length > 1)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            '${_currentIndex + 1} / ${_videoFiles.length}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                            ),
-                          ),
-                        )
-                      else
-                        const SizedBox.shrink(),
-                    ],
-                  ),
-                ),
+                    ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

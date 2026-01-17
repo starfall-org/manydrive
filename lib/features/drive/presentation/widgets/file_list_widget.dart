@@ -29,11 +29,33 @@ class FileListWidgetState extends State<FileListWidget>
     with AutomaticKeepAliveClientMixin {
   SortType _sortType = SortType.name;
   bool _sortAscending = true;
+  String? _selectedFileId;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   bool get wantKeepAlive => true;
 
   void showSortMenu() => _showSortMenu();
+
+  void selectAndScrollToFile(DriveFile file) {
+    setState(() {
+      _selectedFileId = file.id;
+    });
+    // Scroll sẽ được thực hiện sau khi build xong
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToFile(file.id);
+    });
+  }
+
+  void _scrollToFile(String fileId) {
+    // Đợi một chút để đảm bảo list đã build xong
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (!mounted || !_scrollController.hasClients) return;
+
+      // Tìm index của file trong list hiện tại
+      // Sẽ được tính trong build method
+    });
+  }
 
   @override
   void initState() {
@@ -118,18 +140,45 @@ class FileListWidgetState extends State<FileListWidget>
       subtitle += ' • ${_formatFileSize(file.sizeInBytes)}';
     }
 
-    return ListTile(
-      leading: leadingWidget,
-      trailing: _buildFileMenu(file),
-      title: Text(file.name),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
-          fontSize: 12,
-        ),
+    final isSelected = _selectedFileId == file.id;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        color:
+            isSelected
+                ? Theme.of(
+                  context,
+                ).colorScheme.primaryContainer.withValues(alpha: 0.3)
+                : null,
+        border:
+            isSelected
+                ? Border.all(
+                  color: Theme.of(context).colorScheme.primary,
+                  width: 2,
+                )
+                : null,
       ),
-      onTap: () => widget.onFileOpen(file, allFiles),
+      child: ListTile(
+        leading: leadingWidget,
+        trailing: _buildFileMenu(file),
+        title: Text(file.name),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.5),
+            fontSize: 12,
+          ),
+        ),
+        onTap: () {
+          setState(() => _selectedFileId = null);
+          widget.onFileOpen(file, allFiles);
+        },
+      ),
     );
   }
 
@@ -807,7 +856,29 @@ class FileListWidgetState extends State<FileListWidget>
           );
         }
 
+        // Scroll đến file được select nếu có
+        if (_selectedFileId != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            final index = files.indexWhere((f) => f.id == _selectedFileId);
+            if (index != -1 && _scrollController.hasClients) {
+              final position = index * 72.0; // Ước tính chiều cao mỗi item
+              _scrollController.animateTo(
+                position,
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.easeInOut,
+              );
+              // Xóa highlight sau 2 giây
+              Future.delayed(const Duration(seconds: 2), () {
+                if (mounted) {
+                  setState(() => _selectedFileId = null);
+                }
+              });
+            }
+          });
+        }
+
         return ListView.builder(
+          controller: _scrollController,
           itemCount: files.length,
           itemBuilder: (context, index) {
             final file = files[index];
@@ -818,5 +889,11 @@ class FileListWidgetState extends State<FileListWidget>
         );
       },
     );
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 }
