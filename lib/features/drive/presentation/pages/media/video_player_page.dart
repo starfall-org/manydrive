@@ -9,6 +9,7 @@ import 'package:manydrive/features/drive/domain/repositories/drive_repository.da
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 class VideoPlayerPage extends StatefulWidget {
   final DriveFile file;
@@ -39,8 +40,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   @override
   void initState() {
     super.initState();
+    _enableWakelock();
     _loadAutoPlaySetting();
     _loadVideoList();
+  }
+
+  Future<void> _enableWakelock() async {
+    await WakelockPlus.enable();
   }
 
   Future<void> _loadAutoPlaySetting() async {
@@ -127,6 +133,36 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 : 9 / 16,
         autoPlay: index == _currentIndex,
         looping: false,
+        autoInitialize: true,
+        showControlsOnInitialize: false,
+        additionalOptions: (context) {
+          return [
+            OptionItem(
+              onTap: (ctx) {
+                Navigator.of(ctx).pop();
+                setState(() => _autoPlayNext = !_autoPlayNext);
+                _saveAutoPlaySetting(_autoPlayNext);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      _autoPlayNext
+                          ? 'Tự động chuyển tiếp: BẬT'
+                          : 'Tự động chuyển tiếp: TẮT',
+                    ),
+                    duration: const Duration(seconds: 1),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+              iconData:
+                  _autoPlayNext ? Icons.playlist_play : Icons.playlist_remove,
+              title:
+                  _autoPlayNext
+                      ? 'Tắt tự động chuyển tiếp'
+                      : 'Bật tự động chuyển tiếp',
+            ),
+          ];
+        },
       );
 
       setState(() {
@@ -206,6 +242,58 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
     if (_videoControllers.containsKey(index)) {
       _videoControllers[index]!.play();
+
+      // Cập nhật ChewieController với showControlsOnInitialize: false
+      if (_chewieControllers.containsKey(index)) {
+        final oldController = _chewieControllers[index]!;
+        final videoController = _videoControllers[index]!;
+
+        oldController.dispose();
+
+        final newChewieController = ChewieController(
+          videoPlayerController: videoController,
+          aspectRatio:
+              videoController.value.aspectRatio > 0
+                  ? videoController.value.aspectRatio
+                  : 9 / 16,
+          autoPlay: true,
+          looping: false,
+          autoInitialize: true,
+          showControlsOnInitialize: false,
+          additionalOptions: (context) {
+            return [
+              OptionItem(
+                onTap: (ctx) {
+                  Navigator.of(ctx).pop();
+                  setState(() => _autoPlayNext = !_autoPlayNext);
+                  _saveAutoPlaySetting(_autoPlayNext);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        _autoPlayNext
+                            ? 'Tự động chuyển tiếp: BẬT'
+                            : 'Tự động chuyển tiếp: TẮT',
+                      ),
+                      duration: const Duration(seconds: 1),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+                iconData:
+                    _autoPlayNext ? Icons.playlist_play : Icons.playlist_remove,
+                title:
+                    _autoPlayNext
+                        ? 'Tắt tự động chuyển tiếp'
+                        : 'Bật tự động chuyển tiếp',
+              ),
+            ];
+          },
+        );
+
+        setState(() {
+          _chewieControllers[index] = newChewieController;
+        });
+      }
     }
 
     if (index < _videoFiles.length - 1) _preloadPlayer(index + 1);
@@ -283,40 +371,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                         )
                       else
                         const SizedBox.shrink(),
-                      if (_videoFiles.length > 1)
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: IconButton(
-                            icon: Icon(
-                              _autoPlayNext
-                                  ? Icons.playlist_play
-                                  : Icons.playlist_remove,
-                              color: Colors.white,
-                            ),
-                            tooltip:
-                                _autoPlayNext
-                                    ? 'Autoplay: ON'
-                                    : 'Autoplay: OFF',
-                            onPressed: () {
-                              setState(() => _autoPlayNext = !_autoPlayNext);
-                              _saveAutoPlaySetting(_autoPlayNext);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    _autoPlayNext
-                                        ? 'Autoplay enabled'
-                                        : 'Autoplay disabled',
-                                  ),
-                                  duration: const Duration(seconds: 1),
-                                  behavior: SnackBarBehavior.floating,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
                     ],
                   ),
                 ),
@@ -330,6 +384,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   @override
   void dispose() {
+    WakelockPlus.disable();
     _pageController.dispose();
     for (var controller in _videoControllers.values) {
       controller.dispose();
