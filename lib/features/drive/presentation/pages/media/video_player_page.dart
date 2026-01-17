@@ -259,12 +259,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
     return PopScope(
       canPop: true,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop &&
-            _currentIndex >= 0 &&
-            _currentIndex < _videoFiles.length) {
-          // Trả về file video cuối cùng đang xem
-          Navigator.of(context).pop(_videoFiles[_currentIndex]);
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) {
+          // Pause all videos before popping
+          for (var controller in _videoControllers.values) {
+            try {
+              if (controller.value.isInitialized) {
+                await controller.pause();
+              }
+            } catch (_) {}
+          }
         }
       },
       child: Scaffold(
@@ -299,15 +303,28 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   @override
   void dispose() {
     WakelockPlus.disable();
-    _pageController.dispose();
-    for (var controller in _videoControllers.values) {
-      controller.dispose();
-    }
+
+    // Dispose chewie controllers first
     for (var controller in _chewieControllers.values) {
-      controller.dispose();
+      try {
+        controller.dispose();
+      } catch (_) {}
+    }
+    _chewieControllers.clear();
+
+    // Then dispose video controllers
+    for (var controller in _videoControllers.values) {
+      try {
+        controller.dispose();
+      } catch (_) {}
     }
     _videoControllers.clear();
-    _chewieControllers.clear();
+
+    // Finally dispose page controller
+    try {
+      _pageController.dispose();
+    } catch (_) {}
+
     super.dispose();
   }
 }
