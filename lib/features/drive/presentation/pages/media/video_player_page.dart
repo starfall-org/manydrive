@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:manydrive/core/utils/snackbar.dart';
 import 'package:manydrive/features/drive/domain/entities/drive_file.dart';
 import 'package:manydrive/features/drive/domain/repositories/drive_repository.dart';
+import 'package:manydrive/features/drive/presentation/state/mini_player_controller.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
@@ -36,6 +37,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   final Map<int, VideoPlayerController> _videoControllers = {};
   final Map<int, ChewieController> _chewieControllers = {};
+  final Set<int> _initializingIndexes = {};
 
   @override
   void initState() {
@@ -51,9 +53,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   Future<void> _loadAutoPlaySetting() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _autoPlayNext = prefs.getBool('video_autoplay_next') ?? true;
-    });
+    if (mounted) {
+      setState(() {
+        _autoPlayNext = prefs.getBool('video_autoplay_next') ?? true;
+      });
+    }
   }
 
   Future<void> _saveAutoPlaySetting(bool value) async {
@@ -77,7 +81,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
       _pageController = PageController(initialPage: _currentIndex);
 
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
 
       await _initializePlayer(_currentIndex);
 
@@ -85,28 +91,40 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         _preloadPlayer(_currentIndex + 1);
       }
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _videoFiles = [widget.file];
-        _currentIndex = 0;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _videoFiles = [widget.file];
+          _currentIndex = 0;
+        });
+      }
       _pageController = PageController(initialPage: 0);
       await _initializePlayer(0);
     }
   }
 
   Future<void> _initializePlayer(int index) async {
-    if (_videoControllers.containsKey(index) &&
-        _videoControllers[index]!.value.isInitialized) {
+    // 1. Kiểm tra nếu index nằm ngoài dải hợp lệ
+    if (index < 0 || index >= _videoFiles.length) return;
+
+    // 2. Nếu đã có controller hoặc đang khởi tạo rồi thì bỏ qua
+    if (_videoControllers.containsKey(index) || _initializingIndexes.contains(index)) {
       return;
     }
 
-    try {
-      final videoData = await widget.driveRepository.getFileBytes(
-        _videoFiles[index],
-      );
-      final cacheKey = _videoFiles[index].id;
+    _initializingIndexes.add(index);
 
+    try {
+      final driveFile = _videoFiles[index];
+      final videoData = await widget.driveRepository.getFileBytes(driveFile);
+      
+      // Kiểm tra xem index còn hợp lệ sau khi await (người dùng có thể đã lướt đi quá xa)
+      if (!mounted || (index - _currentIndex).abs() > 1) {
+        _initializingIndexes.remove(index);
+        return;
+      }
+
+      final cacheKey = driveFile.id;
       final cachedFile = await _getCachedVideo(cacheKey);
 
       VideoPlayerController videoController;
@@ -119,69 +137,89 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
       await videoController.initialize();
 
-      if (mounted) {
-        videoController.addListener(() => _checkVideoEnd(index));
+      if (!mounted || (index - _currentIndex).abs() > 1) {
+        _initializingIndexes.remove(index);
+        await videoController.dispose();
+        return;
       }
 
-      if (!mounted) return;
+      // Đảm bảo index này vẫn là index chúng ta muốn khởi tạo
+      videoController.addListener(() => _checkVideoEnd(index));
 
       final chewieController = ChewieController(
         videoPlayerController: videoController,
-        aspectRatio:
-            videoController.value.aspectRatio > 0
-                ? videoController.value.aspectRatio
-                : 9 / 16,
+        aspectRatio: videoController.value.aspectRatio > 0
+            ? videoController.value.aspectRatio
+            : 9 / 16,
         autoPlay: index == _currentIndex,
         looping: false,
         autoInitialize: true,
         showControlsOnInitialize: false,
-        errorBuilder: (context, errorMessage) {
-          return const SizedBox.shrink();
-        },
+        errorBuilder: (context, errorMessage) => const SizedBox.shrink(),
+        // Ẩn các nút điều khiển trung tâm mặc định để tùy chỉnh vị trí
+        showControls: true,
+        materialProgressColors: ChewieProgressColors(
+          playedColor: Colors.red,
+          handleColor: Colors.red,
+          backgroundColor: Colors.grey,
+          bufferedColor: Colors.white.withValues(alpha: 0.5),
+        ),
         additionalOptions: (context) {
           return [
             OptionItem(
               onTap: (ctx) {
                 Navigator.of(ctx).pop();
-                setState(() => _autoPlayNext = !_autoPlayNext);
-                _saveAutoPlaySetting(_autoPlayNext);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      _autoPlayNext
-                          ? 'Tự động chuyển tiếp: BẬT'
-                          : 'Tự động chuyển tiếp: TẮT',
+                if (mounted) {
+                  setState(() => _autoPlayNext = !_autoPlayNext);
+                  _saveAutoPlaySetting(_autoPlayNext);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        _autoPlayNext
+                            ? 'Autoplay: ON'
+                            : 'Autoplay: OFF',
+                      ),
+                      duration: const Duration(seconds: 1),
+                      behavior: SnackBarBehavior.floating,
                     ),
-                    duration: const Duration(seconds: 1),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
+                  );
+                }
               },
               iconData:
                   _autoPlayNext ? Icons.playlist_play : Icons.playlist_remove,
-              title:
-                  _autoPlayNext
-                      ? 'Tắt tự động chuyển tiếp'
-                      : 'Bật tự động chuyển tiếp',
+              title: _autoPlayNext
+                  ? 'Disable Autoplay'
+                  : 'Enable Autoplay',
             ),
           ];
         },
       );
 
-      setState(() {
-        _videoControllers[index] = videoController;
-        _chewieControllers[index] = chewieController;
-      });
-    } catch (e) {
       if (mounted) {
-        showErrorSnackBar(context, "Failed to initialize video player: $e");
+        setState(() {
+          _videoControllers[index] = videoController;
+          _chewieControllers[index] = chewieController;
+          _initializingIndexes.remove(index);
+        });
+
+        // Nếu vừa khởi tạo đúng trang hiện tại thì cho phát luôn
+        if (index == _currentIndex) {
+          videoController.play();
+        }
+      } else {
+        _initializingIndexes.remove(index);
+        chewieController.dispose();
+        videoController.dispose();
+      }
+    } catch (e) {
+      _initializingIndexes.remove(index);
+      if (mounted) {
+        showErrorSnackBar(context, "Failed to initialize video: $e");
       }
     }
   }
 
   Future<void> _preloadPlayer(int index) async {
-    if (index < 0 || index >= _videoFiles.length) return;
-    if (_videoControllers.containsKey(index)) return;
     await _initializePlayer(index);
   }
 
@@ -212,6 +250,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   void _checkVideoEnd(int index) {
+    // Chỉ xử lý nếu trang kết thúc là trang hiện tại đang xem
+    if (index != _currentIndex) return;
+    
     if (!_videoControllers.containsKey(index)) return;
 
     final controller = _videoControllers[index]!;
@@ -220,10 +261,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     final isEnded = controller.value.position >= controller.value.duration;
     final isNotPlaying = !controller.value.isPlaying;
 
-    if (isEnded && isNotPlaying && index == _currentIndex) {
+    if (isEnded && isNotPlaying) {
       if (_autoPlayNext && _currentIndex < _videoFiles.length - 1) {
+        // Sử dụng post frame callback để tránh lỗi khi đang build UI
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
+          if (mounted && _currentIndex == index) {
             _pageController.nextPage(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeInOut,
@@ -235,20 +277,45 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   void _onPageChanged(int index) {
+    if (!mounted) return;
+    
     setState(() => _currentIndex = index);
 
-    for (var i = 0; i < _videoFiles.length; i++) {
-      if (i != index && _videoControllers.containsKey(i)) {
-        _videoControllers[i]!.pause();
+    // 1. Tạm dừng tất cả các video không phải trang hiện tại
+    _videoControllers.forEach((i, controller) {
+      if (i != index) {
+        controller.pause();
       }
-    }
+    });
 
+    // 2. Phát video trang hiện tại nếu đã sẵn sàng
     if (_videoControllers.containsKey(index)) {
       _videoControllers[index]!.play();
+    } else {
+      // Nếu chưa có thì khởi tạo ngay lập tức
+      _initializePlayer(index);
     }
 
+    // 3. Quản lý bộ nhớ: Giải phóng các controller ở quá xa (cách > 2 trang)
+    final indexesToDispose = _videoControllers.keys.where((i) => (i - index).abs() > 2).toList();
+    for (var i in indexesToDispose) {
+      _disposeControllerAt(i);
+    }
+
+    // 4. Preload các trang lân cận
     if (index < _videoFiles.length - 1) _preloadPlayer(index + 1);
     if (index > 0) _preloadPlayer(index - 1);
+  }
+
+  void _disposeControllerAt(int index) {
+    if (_chewieControllers.containsKey(index)) {
+      _chewieControllers[index]!.dispose();
+      _chewieControllers.remove(index);
+    }
+    if (_videoControllers.containsKey(index)) {
+      _videoControllers[index]!.dispose();
+      _videoControllers.remove(index);
+    }
   }
 
   @override
@@ -261,13 +328,23 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       canPop: true,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) {
-          // Pause all videos before popping
-          for (var controller in _videoControllers.values) {
-            try {
-              if (controller.value.isInitialized) {
-                await controller.pause();
-              }
-            } catch (_) {}
+          final currentController = _videoControllers[_currentIndex];
+          if (currentController != null) {
+            MiniPlayerController().showVideo(
+              controller: currentController,
+              title: _videoFiles[_currentIndex].name,
+            );
+          }
+          
+          // Pause OTHER videos before popping
+          for (var entry in _videoControllers.entries) {
+            if (entry.key != _currentIndex) {
+              try {
+                if (entry.value.value.isInitialized) {
+                  await entry.value.pause();
+                }
+              } catch (_) {}
+            }
           }
         }
       },
@@ -280,18 +357,86 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 controller: _pageController,
                 onPageChanged: _onPageChanged,
                 itemCount: _videoFiles.length,
-                itemBuilder:
-                    (context, index) => Container(
-                      color: Colors.black,
-                      child:
-                          _chewieControllers.containsKey(index)
-                              ? Chewie(controller: _chewieControllers[index]!)
-                              : const Center(
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
+                itemBuilder: (context, index) {
+                  final isCurrent = index == _currentIndex;
+                  final controller = _videoControllers[index];
+                  final chewie = _chewieControllers[index];
+
+                  return Container(
+                    color: Colors.black,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        if (chewie != null)
+                          Chewie(controller: chewie)
+                        else
+                          const Center(
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                            ),
+                          ),
+                        
+                        // Tùy chỉnh các nút Play/Next/Previous xuống dưới sát thanh tiến độ
+                        if (chewie != null && isCurrent)
+                          Positioned(
+                            bottom: 60, // Sát trên thanh tiến độ của Chewie Material
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Nút Previous
+                                IconButton(
+                                  icon: const Icon(Icons.skip_previous, size: 32, color: Colors.white),
+                                  onPressed: _currentIndex > 0
+                                      ? () => _pageController.previousPage(
+                                            duration: const Duration(milliseconds: 300),
+                                            curve: Curves.easeInOut,
+                                          )
+                                      : null,
                                 ),
-                              ),
+                                const SizedBox(width: 20),
+                                // Nút Play/Pause
+                                ValueListenableBuilder(
+                                  valueListenable: controller!,
+                                  builder: (context, VideoPlayerValue value, child) {
+                                    return IconButton(
+                                      icon: Icon(
+                                        value.isPlaying ? Icons.pause : Icons.play_arrow,
+                                        size: 48,
+                                        color: Colors.white,
+                                      ),
+                                      onPressed: () {
+                                        value.isPlaying ? controller.pause() : controller.play();
+                                      },
+                                    );
+                                  },
+                                ),
+                                const SizedBox(width: 20),
+                                // Nút Next
+                                IconButton(
+                                  icon: const Icon(Icons.skip_next, size: 32, color: Colors.white),
+                                  onPressed: _currentIndex < _videoFiles.length - 1
+                                      ? () => _pageController.nextPage(
+                                            duration: const Duration(milliseconds: 300),
+                                            curve: Curves.easeInOut,
+                                          )
+                                      : null,
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
                     ),
+                  );
+                },
+              ),
+              // Nút quay lại
+              Positioned(
+                top: 10,
+                left: 10,
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
               ),
             ],
           ),
@@ -304,18 +449,24 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   void dispose() {
     WakelockPlus.disable();
 
+    final miniController = MiniPlayerController();
+    bool keepCurrent = miniController.isShowing && 
+                      _videoControllers.values.contains(miniController.videoController);
+
     // Dispose chewie controllers first
-    for (var controller in _chewieControllers.values) {
+    for (var entry in _chewieControllers.entries) {
       try {
-        controller.dispose();
+        entry.value.dispose();
       } catch (_) {}
     }
     _chewieControllers.clear();
 
-    // Then dispose video controllers
-    for (var controller in _videoControllers.values) {
+    // Then dispose video controllers, except the one in mini player
+    for (var entry in _videoControllers.entries) {
       try {
-        controller.dispose();
+        if (!keepCurrent || entry.value != miniController.videoController) {
+          entry.value.dispose();
+        }
       } catch (_) {}
     }
     _videoControllers.clear();

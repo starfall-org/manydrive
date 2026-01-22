@@ -118,7 +118,10 @@ class FileViewerPage {
                       ),
                     );
                   } else if (snapshot.hasData) {
-                    return AudioPlayerPage(audioData: snapshot.data!);
+                    return AudioPlayerPage(
+                      audioData: snapshot.data!,
+                      title: file.name,
+                    );
                   } else {
                     return const Center(
                       child: Text(
