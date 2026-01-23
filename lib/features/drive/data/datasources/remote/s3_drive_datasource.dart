@@ -177,7 +177,27 @@ class S3DriveDataSource {
 
   Future<void> deleteFile(String fileId) async {
     if (_minio == null || _bucket == null) throw Exception('Not logged in');
-    await _minio!.removeObject(_bucket!, fileId);
+    
+    if (fileId.endsWith('/')) {
+      // It's a folder, we need to delete all objects with this prefix
+      final objectsStream = _minio!.listObjectsV2(_bucket!, prefix: fileId, recursive: true);
+      final objectsToDelete = <String>[];
+      
+      await for (final result in objectsStream) {
+        for (final obj in result.objects) {
+          if (obj.key != null) {
+            objectsToDelete.add(obj.key!);
+          }
+        }
+      }
+      
+      if (objectsToDelete.isNotEmpty) {
+        await _minio!.removeObjects(_bucket!, objectsToDelete);
+      }
+    } else {
+      // It's a single file
+      await _minio!.removeObject(_bucket!, fileId);
+    }
   }
 
   Future<void> moveFile(String fileId, String newParentId) async {

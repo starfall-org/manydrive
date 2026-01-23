@@ -59,6 +59,39 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
     });
   }
 
+  void _deleteAccount(String identifier) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Delete Account'),
+            content: Text(
+              'Are you sure you want to remove the account "$identifier"?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+    );
+
+    if (confirmed == true) {
+      await widget.credentialRepository.deleteCredential(identifier);
+      final newSelected = await widget.credentialRepository.getSelectedEmail();
+      await _loadCredentials();
+      if (newSelected != null) {
+        widget.onLogin(newSelected);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final uniqueIdentifiers =
@@ -96,25 +129,49 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
                           value: id,
                           child: Container(
                             constraints: const BoxConstraints(maxWidth: 200),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
+                            child: Row(
                               children: [
-                                Text(
-                                  cred.username,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Theme.of(context).colorScheme.onSurface,
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        cred.username,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color:
+                                              Theme.of(
+                                                context,
+                                              ).colorScheme.onSurface,
+                                        ),
+                                      ),
+                                      Text(
+                                        cred.isS3
+                                            ? (cred.s3Endpoint ?? '')
+                                            : (cred.projectId ?? ''),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color:
+                                              Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                Text(
-                                  cred.isS3 ? (cred.s3Endpoint ?? '') : (cred.projectId ?? ''),
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                if (uniqueIdentifiers.length > 1)
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.delete_outline,
+                                      size: 18,
+                                      color: Colors.red,
+                                    ),
+                                    onPressed: () => _deleteAccount(id),
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
                               ],
                             ),
                           ),

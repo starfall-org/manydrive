@@ -140,14 +140,20 @@ class _ShareFileDialogState extends State<ShareFileDialog> {
     try {
       await widget.driveState.shareFile(file, email, role: role);
       if (!mounted) return;
-      Navigator.pop(context); // Close loading
+      
+      // Close loading dialog
+      Navigator.of(context, rootNavigator: true).pop();
+      
       showSuccessSnackBar(
         context,
         'Shared "${file.name}" with $email as ${role == 'reader' ? 'viewer' : 'editor'}',
       );
     } catch (e) {
       if (!mounted) return;
-      Navigator.pop(context); // Close loading
+      
+      // Close loading dialog
+      Navigator.of(context, rootNavigator: true).pop();
+      
       showErrorSnackBar(context, 'Failed to share: $e');
     }
   }

@@ -244,7 +244,12 @@ class FileListWidgetState extends State<FileListWidget>
     try {
       await widget.driveState.deleteFile(file);
       if (!mounted) return;
-      Navigator.pop(context); // Close loading
+      
+      // Close loading dialog safely
+      if (Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      
       showSuccessSnackBar(
         context,
         '${file.isFolder ? 'Folder' : 'File'} "${file.name}" deleted successfully',
@@ -252,7 +257,12 @@ class FileListWidgetState extends State<FileListWidget>
       widget.driveState.refresh(widget.tabKey);
     } catch (e) {
       if (!mounted) return;
-      Navigator.pop(context); // Close loading
+      
+      // Close loading dialog safely
+      if (Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      
       showErrorSnackBar(
         context,
         'Failed to delete "${file.name}": ${e.toString().replaceAll('Exception: ', '')}',
