@@ -24,9 +24,14 @@ class CredentialLocalDataSource {
     final newCred = jsonDecode(jsonString);
     bool updated = false;
 
+    final String identifier =
+        newCred['client_email'] ?? newCred['s3_endpoint'] ?? 'unknown';
+
     for (int i = 0; i < credList.length; i++) {
       final existingCred = jsonDecode(credList[i]);
-      if (existingCred['client_email'] == newCred['client_email']) {
+      final String existingIdentifier =
+          existingCred['client_email'] ?? existingCred['s3_endpoint'] ?? '';
+      if (existingIdentifier == identifier) {
         credList[i] = jsonString;
         updated = true;
         break;
@@ -40,26 +45,28 @@ class CredentialLocalDataSource {
     await prefs.setStringList(_credentialsKey, credList);
   }
 
-  Future<Map<String, dynamic>?> getCredential(String email) async {
+  Future<Map<String, dynamic>?> getCredential(String emailOrEndpoint) async {
     final credentials = await listCredentials();
     for (final cred in credentials) {
-      if (cred['client_email'] == email) {
+      final identifier = cred['client_email'] ?? cred['s3_endpoint'];
+      if (identifier == emailOrEndpoint) {
         return cred;
       }
     }
     return null;
   }
 
-  Future<String?> deleteCredential(String email) async {
+  Future<String?> deleteCredential(String emailOrEndpoint) async {
     final prefs = await SharedPreferences.getInstance();
     List<String> credList = prefs.getStringList(_credentialsKey) ?? [];
 
     for (final cred in credList) {
       final jsonCred = jsonDecode(cred);
-      if (jsonCred['client_email'] == email) {
+      final identifier = jsonCred['client_email'] ?? jsonCred['s3_endpoint'];
+      if (identifier == emailOrEndpoint) {
         credList.remove(cred);
         await prefs.setStringList(_credentialsKey, credList);
-        return email;
+        return emailOrEndpoint;
       }
     }
     return null;

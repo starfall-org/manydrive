@@ -50,6 +50,11 @@ class DriveState {
       throw Exception('Credential not found for $clientEmail');
     }
     await _driveRepository.login(credential.rawData);
+
+    // Reset path histories when switching accounts to avoid invalid folder IDs
+    for (final key in _pathHistories.keys) {
+      _pathHistories[key] = [];
+    }
   }
 
   /// List files for a tab

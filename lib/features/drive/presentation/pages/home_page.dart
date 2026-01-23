@@ -8,10 +8,13 @@ import 'package:manydrive/features/drive/domain/repositories/credential_reposito
 import 'package:manydrive/features/drive/domain/repositories/drive_repository.dart';
 import 'package:manydrive/features/drive/presentation/dialogs/login_dialog.dart';
 import 'package:manydrive/features/drive/presentation/pages/file_viewer_page.dart';
+import 'package:manydrive/features/drive/presentation/pages/media/video_player_page.dart';
 import 'package:manydrive/features/drive/presentation/state/drive_state.dart';
+import 'package:manydrive/features/drive/presentation/state/mini_player_controller.dart';
 import 'package:manydrive/features/drive/presentation/widgets/bottom_bar_widget.dart';
 import 'package:manydrive/features/drive/presentation/widgets/file_list_widget.dart';
 import 'package:manydrive/features/drive/presentation/widgets/float_buttons_widget.dart';
+import 'package:manydrive/features/drive/presentation/widgets/mini_player_widget.dart';
 import 'package:manydrive/features/drive/presentation/widgets/side_menu_widget.dart';
 import 'package:manydrive/features/drive/presentation/widgets/top_bar_widget.dart';
 import 'package:manydrive/injection_container.dart';
@@ -51,7 +54,30 @@ class _HomePageState extends State<HomePage> {
       widget.credentialRepository,
     );
     _pageController = PageController(initialPage: 0);
+    MiniPlayerController().setOnExpand(_onExpandVideoPlayer);
     _initialize();
+  }
+
+  void _onExpandVideoPlayer(
+    DriveFile file,
+    List<DriveFile>? allFiles,
+    DriveRepository driveRepository,
+  ) {
+    if (mounted) {
+      final miniController = MiniPlayerController();
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder:
+              (context) => VideoPlayerPage(
+                file: file,
+                allFiles: allFiles,
+                driveRepository: driveRepository,
+                initialController: miniController.videoController,
+              ),
+        ),
+      );
+    }
   }
 
   void _loadSettings() {
@@ -67,8 +93,25 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
+  bool _isS3Account = false;
+
   Future<void> _login(String clientEmail) async {
+    final credential = await widget.credentialRepository.getCredential(clientEmail);
+    _isS3Account = credential?.isS3 ?? false;
+
     await _driveState.login(clientEmail);
+
+    if (_isS3Account && _selectedIndex != 0) {
+      _onItemTapped(0);
+    }
+
+    // Auto reload data after login/account switch
+    if (mounted) {
+      _driveState.listFiles(tabKey: 'home');
+      if (!_isS3Account) {
+        _driveState.listFiles(sharedWithMe: true, tabKey: 'shared');
+      }
+    }
   }
 
   Future<void> _initialize() async {
@@ -83,17 +126,18 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    if (selectedEmail == null) {
-      selectedEmail = credList.first.clientEmail;
-      await widget.credentialRepository.setSelectedEmail(selectedEmail);
+    if (selectedEmail == null && credList.isNotEmpty) {
+      final firstCred = credList.first;
+      selectedEmail = firstCred.clientEmail ?? firstCred.s3Endpoint;
+      if (selectedEmail != null) {
+        await widget.credentialRepository.setSelectedEmail(selectedEmail);
+      }
     }
 
-    await _login(selectedEmail);
-
-    await Future.delayed(const Duration(milliseconds: 100));
-    if (mounted) {
-      _driveState.listFiles(tabKey: 'home');
-      _driveState.listFiles(sharedWithMe: true, tabKey: 'shared');
+    if (selectedEmail != null) {
+      final credential = await widget.credentialRepository.getCredential(selectedEmail);
+      _isS3Account = credential?.isS3 ?? false;
+      await _login(selectedEmail);
     }
   }
 
@@ -199,70 +243,87 @@ class _HomePageState extends State<HomePage> {
                 final pathHistory = _driveState.getPathHistory(currentTabKey);
                 final hasHistory = pathHistory.isNotEmpty;
 
-                return Scaffold(
-                  drawer: SideMenuWidget(
-                    credentialRepository: widget.credentialRepository,
-                    onLogin: _login,
-                    themeMode: _themeMode,
-                    onThemeModeChanged: _onThemeModeChanged,
-                    isSuperDarkMode: _isSuperDarkMode,
-                    onSuperDarkModeChanged: _toggleSuperDarkMode,
-                    isDynamicColor: _isDynamicColor,
-                    onDynamicColorChanged: _toggleDynamicColor,
-                    onOpenTrash: () => _openTrashPage(context),
-                  ),
-                  appBar: TopBarWidget(
-                    screen: _selectedIndex == 0 ? 'Home' : 'Shared with me',
-                    onSortPressed: () {
-                      if (_selectedIndex == 0) {
-                        _homeFileListKey.currentState?.showSortMenu();
-                      } else {
-                        _sharedFileListKey.currentState?.showSortMenu();
-                      }
-                    },
-                    onReloadPressed: () {
-                      _driveState.refresh(currentTabKey);
-                    },
-                    onBackPressed:
-                        hasHistory
-                            ? () => _driveState.goBack(currentTabKey)
-                            : null,
-                  ),
-                  body: PageView(
-                    controller: _pageController,
-                    onPageChanged: (index) {
-                      setState(() => _selectedIndex = index);
-                    },
-                    children: [
-                      FileListWidget(
-                        key: _homeFileListKey,
-                        driveState: _driveState,
-                        onFileOpen:
-                            (file, allFiles) =>
-                                _onFileOpen(file, 'home', allFiles),
-                        tabKey: 'home',
-                        isSharedWithMe: false,
-                      ),
-                      FileListWidget(
-                        key: _sharedFileListKey,
-                        driveState: _driveState,
-                        onFileOpen:
-                            (file, allFiles) =>
-                                _onFileOpen(file, 'shared', allFiles),
-                        tabKey: 'shared',
-                        isSharedWithMe: true,
-                      ),
-                    ],
-                  ),
-                  bottomNavigationBar: BottomBarWidget(
-                    selectedIndex: _selectedIndex,
-                    onItemTapped: _onItemTapped,
-                  ),
-                  floatingActionButton: FloatButtonsWidget(
-                    driveState: _driveState,
-                    tabKey: _selectedIndex == 0 ? 'home' : 'shared',
-                  ),
-                );
+                        return Stack(
+                          children: [
+                            Scaffold(
+                              drawer: SideMenuWidget(
+                                credentialRepository: widget.credentialRepository,
+                                onLogin: _login,
+                                themeMode: _themeMode,
+                                onThemeModeChanged: _onThemeModeChanged,
+                                isSuperDarkMode: _isSuperDarkMode,
+                                onSuperDarkModeChanged: _toggleSuperDarkMode,
+                                isDynamicColor: _isDynamicColor,
+                                onDynamicColorChanged: _toggleDynamicColor,
+                                onOpenTrash: () => _openTrashPage(context),
+                              ),
+                              appBar: TopBarWidget(
+                                screen: _selectedIndex == 0 ? 'Home' : 'Shared with me',
+                                onSortPressed: () {
+                                  if (_selectedIndex == 0) {
+                                    _homeFileListKey.currentState?.showSortMenu();
+                                  } else {
+                                    _sharedFileListKey.currentState?.showSortMenu();
+                                  }
+                                },
+                                onReloadPressed: () {
+                                  _driveState.refresh(currentTabKey);
+                                },
+                                onBackPressed:
+                                    hasHistory
+                                        ? () => _driveState.goBack(currentTabKey)
+                                        : null,
+                              ),
+                              body: _isS3Account
+                                  ? FileListWidget(
+                                      key: _homeFileListKey,
+                                      driveState: _driveState,
+                                      onFileOpen:
+                                          (file, allFiles) =>
+                                              _onFileOpen(file, 'home', allFiles),
+                                      tabKey: 'home',
+                                      isSharedWithMe: false,
+                                    )
+                                  : PageView(
+                                      controller: _pageController,
+                                      onPageChanged: (index) {
+                                        setState(() => _selectedIndex = index);
+                                      },
+                                      children: [
+                                        FileListWidget(
+                                          key: _homeFileListKey,
+                                          driveState: _driveState,
+                                          onFileOpen:
+                                              (file, allFiles) =>
+                                                  _onFileOpen(file, 'home', allFiles),
+                                          tabKey: 'home',
+                                          isSharedWithMe: false,
+                                        ),
+                                        FileListWidget(
+                                          key: _sharedFileListKey,
+                                          driveState: _driveState,
+                                          onFileOpen:
+                                              (file, allFiles) =>
+                                                  _onFileOpen(file, 'shared', allFiles),
+                                          tabKey: 'shared',
+                                          isSharedWithMe: true,
+                                        ),
+                                      ],
+                                    ),
+                              bottomNavigationBar: _isS3Account
+                                  ? null
+                                  : BottomBarWidget(
+                                      selectedIndex: _selectedIndex,
+                                      onItemTapped: _onItemTapped,
+                                    ),
+                              floatingActionButton: FloatButtonsWidget(
+                                driveState: _driveState,
+                                tabKey: _selectedIndex == 0 ? 'home' : 'shared',
+                              ),
+                            ),
+                            MiniPlayerWidget(controller: MiniPlayerController()),
+                          ],
+                        );
               },
             ),
           ),

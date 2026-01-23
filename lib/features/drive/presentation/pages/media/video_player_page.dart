@@ -16,12 +16,14 @@ class VideoPlayerPage extends StatefulWidget {
   final DriveFile file;
   final List<DriveFile>? allFiles;
   final DriveRepository driveRepository;
+  final VideoPlayerController? initialController;
 
   const VideoPlayerPage({
     super.key,
     required this.file,
     required this.driveRepository,
     this.allFiles,
+    this.initialController,
   });
 
   @override
@@ -85,7 +87,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         setState(() => _isLoading = false);
       }
 
-      await _initializePlayer(_currentIndex);
+      await _initializePlayer(_currentIndex, initialController: widget.initialController);
 
       if (_currentIndex < _videoFiles.length - 1) {
         _preloadPlayer(_currentIndex + 1);
@@ -103,7 +105,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
   }
 
-  Future<void> _initializePlayer(int index) async {
+  Future<void> _initializePlayer(int index, {VideoPlayerController? initialController}) async {
     // 1. Kiểm tra nếu index nằm ngoài dải hợp lệ
     if (index < 0 || index >= _videoFiles.length) return;
 
@@ -117,26 +119,31 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
     try {
       final driveFile = _videoFiles[index];
-      final videoData = await widget.driveRepository.getFileBytes(driveFile);
-
-      // Kiểm tra xem index còn hợp lệ sau khi await (người dùng có thể đã lướt đi quá xa)
-      if (!mounted || (index - _currentIndex).abs() > 1) {
-        _initializingIndexes.remove(index);
-        return;
-      }
-
-      final cacheKey = driveFile.id;
-      final cachedFile = await _getCachedVideo(cacheKey);
-
       VideoPlayerController videoController;
-      if (cachedFile != null && await cachedFile.exists()) {
-        videoController = VideoPlayerController.file(cachedFile);
-      } else {
-        final savedFile = await _saveVideoToCache(cacheKey, videoData);
-        videoController = VideoPlayerController.file(savedFile);
-      }
 
-      await videoController.initialize();
+      if (initialController != null && index == _currentIndex) {
+        videoController = initialController;
+      } else {
+        final videoData = await widget.driveRepository.getFileBytes(driveFile);
+
+        // Kiểm tra xem index còn hợp lệ sau khi await (người dùng có thể đã lướt đi quá xa)
+        if (!mounted || (index - _currentIndex).abs() > 1) {
+          _initializingIndexes.remove(index);
+          return;
+        }
+
+        final cacheKey = driveFile.id.replaceAll('/', '_');
+        final cachedFile = await _getCachedVideo(cacheKey);
+
+        if (cachedFile != null && await cachedFile.exists()) {
+          videoController = VideoPlayerController.file(cachedFile);
+        } else {
+          final savedFile = await _saveVideoToCache(cacheKey, videoData);
+          videoController = VideoPlayerController.file(savedFile);
+        }
+
+        await videoController.initialize();
+      }
 
       if (!mounted || (index - _currentIndex).abs() > 1) {
         _initializingIndexes.remove(index);
@@ -325,6 +332,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             MiniPlayerController().showVideo(
               controller: currentController,
               title: _videoFiles[_currentIndex].name,
+              file: _videoFiles[_currentIndex],
+              driveRepository: widget.driveRepository,
+              allFiles: _videoFiles,
             );
           }
 

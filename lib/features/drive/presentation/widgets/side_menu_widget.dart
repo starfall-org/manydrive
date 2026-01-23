@@ -51,88 +51,128 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
     });
   }
 
-  void _addAccount(String clientEmail) async {
-    await widget.credentialRepository.setSelectedEmail(clientEmail);
+  void _addAccount(String identifier) async {
+    await widget.credentialRepository.setSelectedEmail(identifier);
     await _loadCredentials();
     setState(() {
-      selectedClientEmail = clientEmail;
+      selectedClientEmail = identifier;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final uniqueEmails = credentials.map((c) => c.clientEmail).toSet().toList();
+    final uniqueIdentifiers =
+        credentials
+            .map((c) => c.clientEmail ?? c.s3Endpoint ?? 'unknown')
+            .toSet()
+            .toList();
 
-    if (!uniqueEmails.contains(selectedClientEmail) &&
-        uniqueEmails.isNotEmpty) {
-      selectedClientEmail = uniqueEmails.first;
+    if (!uniqueIdentifiers.contains(selectedClientEmail) &&
+        uniqueIdentifiers.isNotEmpty) {
+      selectedClientEmail = uniqueIdentifiers.first;
     }
 
     return Drawer(
       child: Column(
         children: [
           UserAccountsDrawerHeader(
-            accountName: const Text("Service Account"),
-            accountEmail: DropdownButton<String>(
-              value: selectedClientEmail,
-              items: [
-                ...uniqueEmails.map(
-                  (email) => DropdownMenuItem(
-                    value: email,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          email.split('@').first,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+            accountName: const Text("ManyDrive"),
+            accountEmail: Theme(
+              data: Theme.of(context).copyWith(
+                canvasColor: Theme.of(context).colorScheme.surface,
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: selectedClientEmail,
+                  isExpanded: true,
+                  icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
+                  items: [
+                    ...uniqueIdentifiers.map(
+                      (id) {
+                        final cred = credentials.firstWhere(
+                          (c) => (c.clientEmail ?? c.s3Endpoint) == id,
+                        );
+                        return DropdownMenuItem(
+                          value: id,
+                          child: Container(
+                            constraints: const BoxConstraints(maxWidth: 200),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  cred.username,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Theme.of(context).colorScheme.onSurface,
+                                  ),
+                                ),
+                                Text(
+                                  cred.isS3 ? (cred.s3Endpoint ?? '') : (cred.projectId ?? ''),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        Text(
-                          credentials
-                              .firstWhere((c) => c.clientEmail == email)
-                              .projectId,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.white70,
-                          ),
-                        ),
-                      ],
+                        );
+                      },
                     ),
-                  ),
-                ),
-                const DropdownMenuItem<String>(
-                  value: '__add_account__',
-                  child: Row(
-                    children: [
-                      Icon(Icons.add, color: Colors.white70, size: 18),
-                      SizedBox(width: 8),
-                      Text(
-                        'Add Account',
-                        style: TextStyle(color: Colors.white70),
+                    DropdownMenuItem<String>(
+                      value: '__add_account__',
+                      child: Row(
+                        children: [
+                          Icon(Icons.add, color: Theme.of(context).colorScheme.primary, size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Add Account',
+                            style: TextStyle(color: Theme.of(context).colorScheme.primary),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value == '__add_account__') {
+                      showLoginDialog(context, widget.credentialRepository, (
+                        identifier,
+                      ) {
+                        _addAccount(identifier);
+                        widget.onLogin(identifier);
+                      });
+                    } else if (value != null) {
+                      setState(() {
+                        selectedClientEmail = value;
+                      });
+                      widget.credentialRepository.setSelectedEmail(value);
+                      widget.onLogin(value);
+                    }
+                  },
+                  selectedItemBuilder: (BuildContext context) {
+                    return [
+                      ...uniqueIdentifiers.map((id) {
+                        return Container(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            id,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }),
+                      const SizedBox.shrink(),
+                    ];
+                  },
+                  dropdownColor: Theme.of(context).colorScheme.surface,
                 ),
-              ],
-              onChanged: (value) {
-                if (value == '__add_account__') {
-                  showLoginDialog(context, widget.credentialRepository, (
-                    email,
-                  ) {
-                    _addAccount(email);
-                    widget.onLogin(email);
-                  });
-                } else if (value != null) {
-                  widget.credentialRepository.setSelectedEmail(value);
-                  widget.onLogin(value);
-                }
-              },
-              dropdownColor: Colors.blue.shade800,
-              style: const TextStyle(color: Colors.white),
-              underline: Container(height: 2, color: Colors.white70),
+              ),
             ),
             decoration: const BoxDecoration(
               image: DecorationImage(

@@ -3,23 +3,36 @@ import 'dart:typed_data';
 
 import 'package:manydrive/features/drive/data/datasources/local/file_cache_datasource.dart';
 import 'package:manydrive/features/drive/data/datasources/remote/google_drive_datasource.dart';
+import 'package:manydrive/features/drive/data/datasources/remote/s3_drive_datasource.dart';
 import 'package:manydrive/features/drive/data/models/drive_file_model.dart';
 import 'package:manydrive/features/drive/domain/entities/drive_file.dart';
 import 'package:manydrive/features/drive/domain/repositories/drive_repository.dart';
 
 /// Implementation of DriveRepository
 class DriveRepositoryImpl implements DriveRepository {
-  final GoogleDriveDataSource _remoteDataSource;
+  final GoogleDriveDataSource _googleDataSource;
+  final S3DriveDataSource _s3DataSource;
   final FileCacheDataSource _cacheDataSource;
+  bool _isS3 = false;
 
-  DriveRepositoryImpl(this._remoteDataSource, this._cacheDataSource);
+  DriveRepositoryImpl(
+    this._googleDataSource,
+    this._s3DataSource,
+    this._cacheDataSource,
+  );
 
   @override
-  bool get isLoggedIn => _remoteDataSource.isLoggedIn;
+  bool get isLoggedIn =>
+      _isS3 ? _s3DataSource.isLoggedIn : _googleDataSource.isLoggedIn;
 
   @override
-  Future<void> login(Map<String, dynamic> credentials) {
-    return _remoteDataSource.login(credentials);
+  Future<void> login(Map<String, dynamic> credentials) async {
+    _isS3 = credentials.containsKey('s3_endpoint');
+    if (_isS3) {
+      await _s3DataSource.login(credentials);
+    } else {
+      await _googleDataSource.login(credentials);
+    }
   }
 
   @override
@@ -28,14 +41,24 @@ class DriveRepositoryImpl implements DriveRepository {
     bool sharedWithMe = false,
     bool trashed = false,
   }) async {
-    final cacheKey = _getCacheKey(folderId, sharedWithMe, trashed);
+    final cacheKey =
+        '${_isS3 ? 's3' : 'gdrive'}_${_getCacheKey(folderId, sharedWithMe, trashed)}';
 
     try {
-      final files = await _remoteDataSource.listFiles(
-        folderId: folderId,
-        sharedWithMe: sharedWithMe,
-        trashed: trashed,
-      );
+      final List<DriveFileModel> files;
+      if (_isS3) {
+        files = await _s3DataSource.listFiles(
+          folderId: folderId,
+          sharedWithMe: sharedWithMe,
+          trashed: trashed,
+        );
+      } else {
+        files = await _googleDataSource.listFiles(
+          folderId: folderId,
+          sharedWithMe: sharedWithMe,
+          trashed: trashed,
+        );
+      }
 
       // Save to cache
       await _cacheDataSource.saveFileList(cacheKey, files);
@@ -64,13 +87,19 @@ class DriveRepositoryImpl implements DriveRepository {
     Function(int progress)? onProgress,
   }) {
     final model = DriveFileModel.fromEntity(file);
-    return _remoteDataSource.downloadFile(model, onProgress: onProgress);
+    if (_isS3) {
+      return _s3DataSource.downloadFile(model, onProgress: onProgress);
+    }
+    return _googleDataSource.downloadFile(model, onProgress: onProgress);
   }
 
   @override
   Future<Uint8List> getFileBytes(DriveFile file) {
     final model = DriveFileModel.fromEntity(file);
-    return _remoteDataSource.getFileBytes(model);
+    if (_isS3) {
+      return _s3DataSource.getFileBytes(model);
+    }
+    return _googleDataSource.getFileBytes(model);
   }
 
   @override
@@ -79,7 +108,14 @@ class DriveRepositoryImpl implements DriveRepository {
     String? parentFolderId,
     Function(int bytes)? onProgress,
   }) {
-    return _remoteDataSource.uploadFile(
+    if (_isS3) {
+      return _s3DataSource.uploadFile(
+        filePath,
+        parentFolderId: parentFolderId,
+        onProgress: onProgress,
+      );
+    }
+    return _googleDataSource.uploadFile(
       filePath,
       parentFolderId: parentFolderId,
       onProgress: onProgress,
@@ -88,22 +124,37 @@ class DriveRepositoryImpl implements DriveRepository {
 
   @override
   Future<void> createFolder(String name, {String? parentFolderId}) {
-    return _remoteDataSource.createFolder(name, parentFolderId: parentFolderId);
+    if (_isS3) {
+      return _s3DataSource.createFolder(name, parentFolderId: parentFolderId);
+    }
+    return _googleDataSource.createFolder(
+      name,
+      parentFolderId: parentFolderId,
+    );
   }
 
   @override
   Future<void> deleteFile(DriveFile file) {
-    return _remoteDataSource.deleteFile(file.id);
+    if (_isS3) {
+      return _s3DataSource.deleteFile(file.id);
+    }
+    return _googleDataSource.deleteFile(file.id);
   }
 
   @override
   Future<void> moveFile(DriveFile file, String newParentId) {
-    return _remoteDataSource.moveFile(file.id, newParentId);
+    if (_isS3) {
+      return _s3DataSource.moveFile(file.id, newParentId);
+    }
+    return _googleDataSource.moveFile(file.id, newParentId);
   }
 
   @override
   Future<void> copyFile(DriveFile file, String newParentId) {
-    return _remoteDataSource.copyFile(file.id, newParentId);
+    if (_isS3) {
+      return _s3DataSource.copyFile(file.id, newParentId);
+    }
+    return _googleDataSource.copyFile(file.id, newParentId);
   }
 
   @override
@@ -112,6 +163,9 @@ class DriveRepositoryImpl implements DriveRepository {
     String email, {
     String role = 'reader',
   }) {
-    return _remoteDataSource.shareFile(file.id, email, role: role);
+    if (_isS3) {
+      return Future.value(); // Not supported in S3
+    }
+    return _googleDataSource.shareFile(file.id, email, role: role);
   }
 }
