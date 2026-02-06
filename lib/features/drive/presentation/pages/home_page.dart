@@ -146,6 +146,9 @@ class _HomePageState extends State<HomePage> {
     String tabKey,
     List<DriveFile> allFiles,
   ) async {
+    // Đóng mini player nếu đang hiển thị trước khi mở file mới
+    MiniPlayerController().close();
+
     if (file.isFolder) {
       _driveState.listFiles(folderId: file.id, tabKey: tabKey);
     } else {
