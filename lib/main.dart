@@ -3,8 +3,6 @@ import 'package:flutter/services.dart';
 
 import 'package:manydrive/core/utils/permissions.dart';
 import 'package:manydrive/features/drive/presentation/pages/home_page.dart';
-import 'package:manydrive/features/drive/presentation/state/mini_player_controller.dart';
-import 'package:manydrive/features/drive/presentation/widgets/mini_player_widget.dart';
 import 'package:manydrive/injection_container.dart';
 
 void main() async {
@@ -40,14 +38,6 @@ class ManyDriveApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'ManyDrive',
-      builder: (context, child) {
-        return Stack(
-          children: [
-            if (child != null) child,
-            MiniPlayerWidget(controller: MiniPlayerController()),
-          ],
-        );
-      },
       home: HomePage(
         driveRepository: injector.driveRepository,
         credentialRepository: injector.credentialRepository,

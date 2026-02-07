@@ -231,6 +231,14 @@ class _HomePageState extends State<HomePage> {
             superDark: _isSuperDarkMode,
           ),
           themeMode: _themeMode,
+          builder: (context, child) {
+            return Stack(
+              children: [
+                if (child != null) child,
+                MiniPlayerWidget(controller: MiniPlayerController()),
+              ],
+            );
+          },
           home: PopScope(
             canPop: false,
             onPopInvokedWithResult: (bool didPop, Object? result) async {
@@ -246,87 +254,77 @@ class _HomePageState extends State<HomePage> {
                 final pathHistory = _driveState.getPathHistory(currentTabKey);
                 final hasHistory = pathHistory.isNotEmpty;
 
-                        return Stack(
+                return Scaffold(
+                  drawer: SideMenuWidget(
+                    credentialRepository: widget.credentialRepository,
+                    onLogin: _login,
+                    themeMode: _themeMode,
+                    onThemeModeChanged: _onThemeModeChanged,
+                    isSuperDarkMode: _isSuperDarkMode,
+                    onSuperDarkModeChanged: _toggleSuperDarkMode,
+                    isDynamicColor: _isDynamicColor,
+                    onDynamicColorChanged: _toggleDynamicColor,
+                    onOpenTrash: () => _openTrashPage(context),
+                  ),
+                  appBar: TopBarWidget(
+                    screen: _selectedIndex == 0 ? 'Home' : 'Shared with me',
+                    onSortPressed: () {
+                      if (_selectedIndex == 0) {
+                        _homeFileListKey.currentState?.showSortMenu();
+                      } else {
+                        _sharedFileListKey.currentState?.showSortMenu();
+                      }
+                    },
+                    onReloadPressed: () {
+                      _driveState.refresh(currentTabKey);
+                    },
+                    onBackPressed:
+                        hasHistory ? () => _driveState.goBack(currentTabKey) : null,
+                  ),
+                  body: _isS3Account
+                      ? FileListWidget(
+                          key: _homeFileListKey,
+                          driveState: _driveState,
+                          onFileOpen:
+                              (file, allFiles) => _onFileOpen(file, 'home', allFiles),
+                          tabKey: 'home',
+                          isSharedWithMe: false,
+                        )
+                      : PageView(
+                          controller: _pageController,
+                          onPageChanged: (index) {
+                            setState(() => _selectedIndex = index);
+                          },
                           children: [
-                            Scaffold(
-                              drawer: SideMenuWidget(
-                                credentialRepository: widget.credentialRepository,
-                                onLogin: _login,
-                                themeMode: _themeMode,
-                                onThemeModeChanged: _onThemeModeChanged,
-                                isSuperDarkMode: _isSuperDarkMode,
-                                onSuperDarkModeChanged: _toggleSuperDarkMode,
-                                isDynamicColor: _isDynamicColor,
-                                onDynamicColorChanged: _toggleDynamicColor,
-                                onOpenTrash: () => _openTrashPage(context),
-                              ),
-                              appBar: TopBarWidget(
-                                screen: _selectedIndex == 0 ? 'Home' : 'Shared with me',
-                                onSortPressed: () {
-                                  if (_selectedIndex == 0) {
-                                    _homeFileListKey.currentState?.showSortMenu();
-                                  } else {
-                                    _sharedFileListKey.currentState?.showSortMenu();
-                                  }
-                                },
-                                onReloadPressed: () {
-                                  _driveState.refresh(currentTabKey);
-                                },
-                                onBackPressed:
-                                    hasHistory
-                                        ? () => _driveState.goBack(currentTabKey)
-                                        : null,
-                              ),
-                              body: _isS3Account
-                                  ? FileListWidget(
-                                      key: _homeFileListKey,
-                                      driveState: _driveState,
-                                      onFileOpen:
-                                          (file, allFiles) =>
-                                              _onFileOpen(file, 'home', allFiles),
-                                      tabKey: 'home',
-                                      isSharedWithMe: false,
-                                    )
-                                  : PageView(
-                                      controller: _pageController,
-                                      onPageChanged: (index) {
-                                        setState(() => _selectedIndex = index);
-                                      },
-                                      children: [
-                                        FileListWidget(
-                                          key: _homeFileListKey,
-                                          driveState: _driveState,
-                                          onFileOpen:
-                                              (file, allFiles) =>
-                                                  _onFileOpen(file, 'home', allFiles),
-                                          tabKey: 'home',
-                                          isSharedWithMe: false,
-                                        ),
-                                        FileListWidget(
-                                          key: _sharedFileListKey,
-                                          driveState: _driveState,
-                                          onFileOpen:
-                                              (file, allFiles) =>
-                                                  _onFileOpen(file, 'shared', allFiles),
-                                          tabKey: 'shared',
-                                          isSharedWithMe: true,
-                                        ),
-                                      ],
-                                    ),
-                              bottomNavigationBar: _isS3Account
-                                  ? null
-                                  : BottomBarWidget(
-                                      selectedIndex: _selectedIndex,
-                                      onItemTapped: _onItemTapped,
-                                    ),
-                              floatingActionButton: FloatButtonsWidget(
-                                driveState: _driveState,
-                                tabKey: _selectedIndex == 0 ? 'home' : 'shared',
-                              ),
+                            FileListWidget(
+                              key: _homeFileListKey,
+                              driveState: _driveState,
+                              onFileOpen:
+                                  (file, allFiles) => _onFileOpen(file, 'home', allFiles),
+                              tabKey: 'home',
+                              isSharedWithMe: false,
                             ),
-                            MiniPlayerWidget(controller: MiniPlayerController()),
+                            FileListWidget(
+                              key: _sharedFileListKey,
+                              driveState: _driveState,
+                              onFileOpen: (file, allFiles) =>
+                                  _onFileOpen(file, 'shared', allFiles),
+                              tabKey: 'shared',
+                              isSharedWithMe: true,
+                            ),
                           ],
-                        );
+                        ),
+                  bottomNavigationBar: _isS3Account
+                      ? null
+                      : BottomBarWidget(
+                          selectedIndex: _selectedIndex,
+                          onItemTapped: _onItemTapped,
+                        ),
+                  floatingActionButton: FloatButtonsWidget(
+                    driveState: _driveState,
+                    tabKey: _selectedIndex == 0 ? 'home' : 'shared',
+                  ),
+                );
               },
             ),
           ),
