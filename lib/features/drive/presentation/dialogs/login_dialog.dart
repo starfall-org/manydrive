@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:manydrive/features/drive/domain/repositories/credential_repository.dart';
 
@@ -49,7 +49,6 @@ class _LoginDialogState extends State<_LoginDialog>
   final _oauthEmailController = TextEditingController();
   final _oauthAccessTokenController = TextEditingController();
   final _oauthRefreshTokenController = TextEditingController();
-  final _oauthWebClientIdController = TextEditingController();
 
   @override
   void dispose() {
@@ -62,7 +61,6 @@ class _LoginDialogState extends State<_LoginDialog>
     _oauthEmailController.dispose();
     _oauthAccessTokenController.dispose();
     _oauthRefreshTokenController.dispose();
-    _oauthWebClientIdController.dispose();
     super.dispose();
   }
 
@@ -77,9 +75,7 @@ class _LoginDialogState extends State<_LoginDialog>
 
   Future<void> _handleGoogleNativeSignIn() async {
     try {
-      final webClientId = _oauthWebClientIdController.text.trim();
       final googleSignIn = GoogleSignIn(
-        serverClientId: webClientId.isNotEmpty ? webClientId : null,
         scopes: [
           'https://www.googleapis.com/auth/drive',
           'https://www.googleapis.com/auth/photoslibrary.readonly',
@@ -90,13 +86,19 @@ class _LoginDialogState extends State<_LoginDialog>
       final account = await googleSignIn.signIn();
       if (account != null) {
         final auth = await account.authentication;
+        final AuthCredential credential = GoogleAuthProvider.credential(
+          accessToken: auth.accessToken,
+          idToken: auth.idToken,
+        );
+
+        await FirebaseAuth.instance.signInWithCredential(credential);
+
         final credData = {
           'auth_type': 'oauth',
           'client_email': account.email,
           'access_token': auth.accessToken,
           'id_token': auth.idToken,
           'display_name': account.displayName,
-          if (webClientId.isNotEmpty) 'server_client_id': webClientId,
         };
         widget.credentialRepository.saveCredential(jsonEncode(credData));
         widget.onLogin(account.email);
@@ -104,104 +106,9 @@ class _LoginDialogState extends State<_LoginDialog>
       }
     } catch (e) {
       if (mounted) {
-        final errStr = e.toString();
-        if (errStr.contains('10') || errStr.contains('sign_in_failed') || errStr.contains('DEVELOPER_ERROR')) {
-          _showOAuthSetupGuideDialog(context, errStr);
-        } else {
-          _showErrorDialog(context, 'Google Sign-In failed: $errStr');
-        }
+        _showErrorDialog(context, 'Google Sign-In failed: $e');
       }
     }
-  }
-
-  void _showOAuthSetupGuideDialog(BuildContext context, String errorDetails) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: const [
-            Icon(Icons.warning_amber_rounded, color: Colors.orange),
-            SizedBox(width: 8),
-            Expanded(child: Text('Lỗi Google Sign-In (Code 10)', style: TextStyle(fontSize: 18))),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Lỗi Code 10 (DEVELOPER_ERROR) xảy ra khi ứng dụng chưa được cấu hình đúng trên Google Cloud Console.',
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(height: 12),
-              const Text('Các bước cần thực hiện để sửa lỗi:', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              const Text('1. Package Name của ứng dụng:'),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(8),
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'com.starfall.gsadrive',
-                        style: TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold, color: Colors.black87),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.copy, size: 18, color: Colors.black87),
-                      onPressed: () {
-                        Clipboard.setData(const ClipboardData(text: 'com.starfall.gsadrive'));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Đã sao chép Package Name!')),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text('2. Thêm SHA-1 Certificate Fingerprint:'),
-              const Text(
-                '• Mở Google Cloud Console -> APIs & Services -> Credentials.\n'
-                '• Tạo hoặc chỉnh sửa OAuth 2.0 Client ID loại Android.\n'
-                '• Điền Package Name trên và thêm mã SHA-1 fingerprint của keystore (Debug/Release).',
-                style: TextStyle(fontSize: 13, color: Colors.black87),
-              ),
-              const SizedBox(height: 8),
-              const Text('3. Web Client ID (serverClientId):'),
-              const Text(
-                '• Tạo thêm một OAuth 2.0 Client ID loại Web Application.\n'
-                '• Sao chép Client ID đó và dán vào ô "Web Client ID (optional)" bên dưới trước khi bấm đăng nhập.',
-                style: TextStyle(fontSize: 13, color: Colors.black87),
-              ),
-              const SizedBox(height: 12),
-              ExpansionTile(
-                title: const Text('Chi tiết lỗi kĩ thuật', style: TextStyle(fontSize: 13, color: Colors.grey)),
-                children: [
-                  SelectableText(
-                    errorDetails,
-                    style: const TextStyle(fontSize: 12, fontFamily: 'monospace', color: Colors.redAccent),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Đã hiểu'),
-          ),
-        ],
-      ),
-    );
   }
 
   void _handleLogin() {
@@ -210,7 +117,7 @@ class _LoginDialogState extends State<_LoginDialog>
           _oauthAccessTokenController.text.isEmpty) {
         _showErrorDialog(
           context,
-          'Vui lòng nhập Email và Access Token hoặc bấm nút Sign in with Google.',
+          'Vui lòng nhập Email và Access Token hoặc bấm nút Đăng nhập bằng Google.',
         );
         return;
       }
@@ -249,27 +156,34 @@ class _LoginDialogState extends State<_LoginDialog>
           'File JSON không hợp lệ hoặc không chứa "client_email".',
         );
       }
-    } else {
-      if (_s3EndpointController.text.isEmpty ||
-          _s3AccessKeyController.text.isEmpty ||
-          _s3SecretKeyController.text.isEmpty ||
-          _s3BucketController.text.isEmpty) {
-        _showErrorDialog(context, 'Vui lòng điền đầy đủ các trường S3 bắt buộc.');
+    } else if (_selectedTabIndex == 2) {
+      final endpoint = _s3EndpointController.text.trim();
+      final accessKey = _s3AccessKeyController.text.trim();
+      final secretKey = _s3SecretKeyController.text.trim();
+      final bucket = _s3BucketController.text.trim();
+      final region = _s3RegionController.text.trim();
+
+      if (endpoint.isEmpty ||
+          accessKey.isEmpty ||
+          secretKey.isEmpty ||
+          bucket.isEmpty) {
+        _showErrorDialog(context, 'Vui lòng điền đầy đủ các thông tin bắt buộc.');
         return;
       }
 
       final s3Data = {
-        's3_endpoint': _s3EndpointController.text,
-        's3_access_key': _s3AccessKeyController.text,
-        's3_secret_key': _s3SecretKeyController.text,
-        's3_bucket': _s3BucketController.text,
-        's3_region': _s3RegionController.text,
+        'auth_type': 's3',
+        'endpoint': endpoint,
+        'access_key': accessKey,
+        'secret_key': secretKey,
+        'bucket': bucket,
+        'region': region.isEmpty ? 'us-east-1' : region,
+        'client_email': 'S3 ()',
       };
 
       try {
-        final jsonString = jsonEncode(s3Data);
-        widget.credentialRepository.saveCredential(jsonString);
-        widget.onLogin(_s3EndpointController.text);
+        widget.credentialRepository.saveCredential(jsonEncode(s3Data));
+        widget.onLogin('S3 ()');
         Navigator.of(context).pop();
       } catch (e) {
         _showErrorDialog(context, e.toString());
@@ -285,7 +199,7 @@ class _LoginDialogState extends State<_LoginDialog>
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Container(
-        constraints: const BoxConstraints(maxWidth: 460),
+        constraints: const BoxConstraints(maxWidth: 450),
         padding: const EdgeInsets.all(24),
         child: SingleChildScrollView(
           child: Column(
@@ -399,17 +313,6 @@ class _LoginDialogState extends State<_LoginDialog>
               fontWeight: FontWeight.w600,
               color: colorScheme.onSurface,
             ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _oauthWebClientIdController,
-          decoration: InputDecoration(
-            labelText: 'Web Client ID (serverClientId - không bắt buộc)',
-            hintText: 'xxxx.apps.googleusercontent.com',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-            isDense: true,
-            prefixIcon: const Icon(Icons.qr_code, size: 20),
           ),
         ),
         const SizedBox(height: 16),

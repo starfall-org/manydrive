@@ -1,12 +1,19 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:manydrive/core/utils/permissions.dart';
 import 'package:manydrive/features/drive/presentation/pages/home_page.dart';
+import 'package:manydrive/firebase_options.dart';
 import 'package:manydrive/injection_container.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
   // Initialize dependency injection
   await injector.init();
