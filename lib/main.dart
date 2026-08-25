@@ -5,11 +5,17 @@ import 'package:manydrive/core/utils/permissions.dart';
 import 'package:manydrive/features/drive/presentation/pages/home_page.dart';
 import 'package:manydrive/injection_container.dart';
 
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize dependency injection
   await injector.init();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
   // Make status bar and navigation bar transparent
   SystemChrome.setSystemUIOverlayStyle(
