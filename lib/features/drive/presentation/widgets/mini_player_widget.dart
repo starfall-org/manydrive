@@ -131,12 +131,18 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
       if (vCtrl != null && vCtrl.value.isInitialized) {
         return ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: SizedBox(
+          child: Container(
             width: 52,
             height: 52,
-            child: AspectRatio(
-              aspectRatio: vCtrl.value.aspectRatio > 0 ? vCtrl.value.aspectRatio : 16 / 9,
-              child: VideoPlayer(vCtrl),
+            color: Colors.black,
+            child: FittedBox(
+              fit: BoxFit.cover,
+              clipBehavior: Clip.hardEdge,
+              child: SizedBox(
+                width: vCtrl.value.size.width > 0 ? vCtrl.value.size.width : 16,
+                height: vCtrl.value.size.height > 0 ? vCtrl.value.size.height : 9,
+                child: VideoPlayer(vCtrl),
+              ),
             ),
           ),
         );
