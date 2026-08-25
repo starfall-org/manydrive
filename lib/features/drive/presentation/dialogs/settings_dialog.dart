@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:manydrive/core/services/notification_service.dart';
 import 'package:manydrive/core/services/settings_service.dart';
+import 'package:manydrive/core/utils/snackbar.dart';
 import 'package:manydrive/injection_container.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -32,6 +34,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late bool _enableFileCache;
   late String _uploadMode;
   late bool _backgroundPlayback;
+  late bool _enableNotifications;
 
   final SettingsService _settingsService = injector.settingsService;
 
@@ -45,6 +48,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _enableFileCache = _settingsService.enableFileCache;
     _uploadMode = _settingsService.uploadMode;
     _backgroundPlayback = _settingsService.backgroundPlayback;
+    _enableNotifications = _settingsService.enableNotifications;
   }
 
   int get _themeModeIndex {
@@ -68,8 +72,14 @@ class _SettingsPageState extends State<SettingsPage> {
         title: const Text('Cài đặt hệ thống'),
         centerTitle: true,
       ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      body: SafeArea(
+        child: ListView(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 12,
+            bottom: 24 + MediaQuery.paddingOf(context).bottom,
+          ),
         children: [
           _buildSectionHeader('Giao diện & Chủ đề'),
           const SizedBox(height: 8),
@@ -275,9 +285,47 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
           ),
+          const SizedBox(height: 16),
+          _buildSectionHeader('Thông báo hệ thống'),
+          const SizedBox(height: 8),
+          Card(
+            elevation: 0,
+            color: colorScheme.surfaceContainerLow,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Bật thông báo ứng dụng',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'Yêu cầu cấp quyền và hiển thị thông báo tiến trình & trình phát',
+                  style: TextStyle(fontSize: 12),
+                ),
+                value: _enableNotifications,
+                onChanged: (value) async {
+                  if (value) {
+                    final granted = await NotificationService().requestPermission();
+                    if (granted) {
+                      setState(() => _enableNotifications = true);
+                      _settingsService.setEnableNotifications(true);
+                      if (mounted) showSuccessSnackBar(context, 'Đã bật thông báo hệ thống');
+                    } else {
+                      if (mounted) showErrorSnackBar(context, 'Quyền thông báo bị từ chối');
+                    }
+                  } else {
+                    setState(() => _enableNotifications = false);
+                    _settingsService.setEnableNotifications(false);
+                  }
+                },
+              ),
+            ),
+          ),
         ],
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildSectionHeader(String title) {

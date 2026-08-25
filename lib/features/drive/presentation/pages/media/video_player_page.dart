@@ -229,6 +229,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
   }
 
+  void _stopAndClose() {
+    MiniPlayerController().close();
+    NotificationService().cancel(9991);
+    Navigator.of(context).pop();
+  }
+
   void _updateNotification(String title, bool isPlaying) {
     NotificationService().showMediaNotification(
       id: 9991,
@@ -370,6 +376,18 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         appBar: AppBar(
           backgroundColor: Colors.black,
           foregroundColor: Colors.white,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () => Navigator.of(context).pop(),
+            tooltip: 'Thu nhỏ',
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.close_rounded, color: Colors.white, size: 26),
+              tooltip: 'Đóng hoàn toàn',
+              onPressed: _stopAndClose,
+            ),
+          ],
           title: Text(
             _videoFiles.isNotEmpty ? _videoFiles[_currentIndex].name : widget.file.name,
             style: const TextStyle(fontSize: 16),

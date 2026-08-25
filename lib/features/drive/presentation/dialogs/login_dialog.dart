@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:manydrive/core/widgets/app_error_widget.dart';
 import 'package:manydrive/features/drive/domain/repositories/credential_repository.dart';
 
 void showLoginDialog(
@@ -78,20 +78,28 @@ class _LoginDialogState extends State<_LoginDialog>
       final googleSignIn = GoogleSignIn(
         scopes: [
           'https://www.googleapis.com/auth/drive',
+          'https://www.googleapis.com/auth/drive.file',
+          'https://www.googleapis.com/auth/drive.readonly',
           'https://www.googleapis.com/auth/photoslibrary.readonly',
           'https://www.googleapis.com/auth/photoslibrary',
         ],
       );
 
+      // Disconnect/signOut active GoogleSignIn session so account picker always displays on button press
+      if (await googleSignIn.isSignedIn()) {
+        await googleSignIn.signOut();
+      }
+
       final account = await googleSignIn.signIn();
       if (account != null) {
         final auth = await account.authentication;
-        final AuthCredential credential = GoogleAuthProvider.credential(
-          accessToken: auth.accessToken,
-          idToken: auth.idToken,
-        );
-
-        await FirebaseAuth.instance.signInWithCredential(credential);
+        try {
+          final AuthCredential credential = GoogleAuthProvider.credential(
+            accessToken: auth.accessToken,
+            idToken: auth.idToken,
+          );
+          await FirebaseAuth.instance.signInWithCredential(credential);
+        } catch (_) {}
 
         final credData = {
           'auth_type': 'oauth',
@@ -99,6 +107,7 @@ class _LoginDialogState extends State<_LoginDialog>
           'access_token': auth.accessToken,
           'id_token': auth.idToken,
           'display_name': account.displayName,
+          'photo_url': account.photoUrl,
         };
         widget.credentialRepository.saveCredential(jsonEncode(credData));
         widget.onLogin(account.email);
@@ -478,15 +487,12 @@ void _showErrorDialog(BuildContext context, String message) {
   showDialog(
     context: context,
     builder:
-        (context) => AlertDialog(
-          title: const Text('Thông báo lỗi'),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Đóng'),
-            ),
-          ],
+        (context) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: AppErrorWidget(
+            title: 'Thông báo lỗi',
+            errorMessage: message,
+          ),
         ),
   );
 }

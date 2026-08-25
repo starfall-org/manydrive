@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:manydrive/core/services/settings_service.dart';
 import 'package:manydrive/core/theme/app_theme.dart';
 import 'package:manydrive/features/drive/domain/entities/drive_file.dart';
@@ -48,6 +50,7 @@ class _HomePageState extends State<HomePage> {
   late final SettingsService _settingsService;
   final GlobalKey<FileListWidgetState> _homeFileListKey = GlobalKey();
   final GlobalKey<FileListWidgetState> _sharedFileListKey = GlobalKey();
+  final GlobalKey<GooglePhotosPageState> _photosPageKey = GlobalKey();
 
   @override
   void initState() {
@@ -123,6 +126,39 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _login(String clientEmail) async {
     final credential = await widget.credentialRepository.getCredential(clientEmail);
+
+    if (credential != null && credential.isOAuth) {
+      try {
+        final googleSignIn = GoogleSignIn(
+          scopes: [
+            'https://www.googleapis.com/auth/drive',
+            'https://www.googleapis.com/auth/drive.file',
+            'https://www.googleapis.com/auth/drive.readonly',
+            'https://www.googleapis.com/auth/photoslibrary.readonly',
+            'https://www.googleapis.com/auth/photoslibrary',
+          ],
+        );
+        final account = await googleSignIn.signInSilently();
+        if (account != null && account.email == clientEmail) {
+          final auth = await account.authentication;
+          final credData = Map<String, dynamic>.from(credential.rawData);
+          if (auth.accessToken != null && auth.accessToken!.isNotEmpty) {
+            credData['access_token'] = auth.accessToken;
+          }
+          if (auth.idToken != null && auth.idToken!.isNotEmpty) {
+            credData['id_token'] = auth.idToken;
+          }
+          if (account.photoUrl != null) {
+            credData['photo_url'] = account.photoUrl;
+          }
+          if (account.displayName != null) {
+            credData['display_name'] = account.displayName;
+          }
+          await widget.credentialRepository.saveCredential(jsonEncode(credData));
+        }
+      } catch (_) {}
+    }
+
     _isS3Account = credential?.isS3 ?? false;
     _isServiceAccount = credential?.isServiceAccount ?? false;
 
@@ -310,8 +346,12 @@ class _HomePageState extends State<HomePage> {
                       }
                     },
                     onReloadPressed: () {
-                      if (_selectedIndex < 2) {
-                        _driveState.refresh(currentTabKey);
+                      if (_selectedIndex == 0) {
+                        _driveState.refresh('home');
+                      } else if (_selectedIndex == 1) {
+                        _driveState.refresh('shared');
+                      } else if (_selectedIndex == 2) {
+                        _photosPageKey.currentState?.refresh();
                       }
                     },
                     onBackPressed:
@@ -350,7 +390,7 @@ class _HomePageState extends State<HomePage> {
                               tabKey: 'shared',
                               isSharedWithMe: true,
                             ),
-                            if (!_isServiceAccount) const GooglePhotosPage(),
+                            if (!_isServiceAccount) GooglePhotosPage(key: _photosPageKey),
                           ],
                         ),
                   bottomNavigationBar: _isS3Account

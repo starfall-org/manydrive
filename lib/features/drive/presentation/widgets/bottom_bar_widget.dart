@@ -37,12 +37,27 @@ class BottomBarWidget extends StatelessWidget {
 
     final currentIndex = selectedIndex.clamp(0, destinations.length - 1);
 
-    return NavigationBar(
-      selectedIndex: currentIndex,
-      onDestinationSelected: onItemTapped,
-      elevation: 3,
-      indicatorColor: colorScheme.primaryContainer,
-      destinations: destinations,
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        child: NavigationBar(
+          selectedIndex: currentIndex,
+          onDestinationSelected: onItemTapped,
+          elevation: 3,
+          indicatorColor: colorScheme.primaryContainer,
+          destinations: destinations,
+        ),
+      ),
     );
   }
 }

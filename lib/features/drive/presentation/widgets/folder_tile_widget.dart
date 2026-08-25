@@ -28,7 +28,7 @@ class FolderTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: ListTile(
           leading: const Icon(Icons.folder),
           trailing: FileMenu(

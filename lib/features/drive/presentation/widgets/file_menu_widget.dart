@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:manydrive/core/utils/snackbar.dart';
 import 'package:manydrive/features/drive/domain/entities/drive_file.dart';
+import 'package:manydrive/features/drive/presentation/state/mini_player_controller.dart';
 
 class FileMenu extends StatelessWidget {
   final DriveFile file;
@@ -7,6 +9,7 @@ class FileMenu extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback onInfo;
   final VoidCallback onDelete;
+  final VoidCallback? onAddToQueue;
 
   const FileMenu({
     super.key,
@@ -15,6 +18,7 @@ class FileMenu extends StatelessWidget {
     required this.onShare,
     required this.onInfo,
     required this.onDelete,
+    this.onAddToQueue,
   });
 
   @override
@@ -52,6 +56,17 @@ class FileMenu extends StatelessWidget {
                 ],
               ),
             ),
+            if (file.isAudio || file.isVideo)
+              const PopupMenuItem<String>(
+                value: 'addToQueue',
+                child: Row(
+                  children: [
+                    Icon(Icons.queue_music_rounded, size: 20),
+                    SizedBox(width: 12),
+                    Text('Thêm vào danh sách phát'),
+                  ],
+                ),
+              ),
             const PopupMenuDivider(),
             PopupMenuItem<String>(
               value: 'delete',
@@ -78,6 +93,14 @@ class FileMenu extends StatelessWidget {
             break;
           case 'info':
             onInfo();
+            break;
+          case 'addToQueue':
+            if (onAddToQueue != null) {
+              onAddToQueue!();
+            } else {
+              MiniPlayerController().addToQueue(file);
+              showSuccessSnackBar(context, 'Đã thêm "${file.name}" vào danh sách phát');
+            }
             break;
           case 'delete':
             onDelete();

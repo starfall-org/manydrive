@@ -39,6 +39,14 @@ class MiniPlayerController extends ChangeNotifier {
   List<DriveFile>? _allFiles;
   List<DriveFile>? get allFiles => _allFiles;
 
+  void addToQueue(DriveFile file) {
+    _allFiles ??= [];
+    if (!_allFiles!.any((f) => f.id == file.id)) {
+      _allFiles!.add(file);
+      notifyListeners();
+    }
+  }
+
   DriveRepository? _driveRepository;
   DriveRepository? get driveRepository => _driveRepository;
 
