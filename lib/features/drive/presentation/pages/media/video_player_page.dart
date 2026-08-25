@@ -3,10 +3,12 @@ import 'dart:typed_data';
 
 import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
+import 'package:manydrive/core/services/notification_service.dart';
 import 'package:manydrive/core/utils/snackbar.dart';
 import 'package:manydrive/features/drive/domain/entities/drive_file.dart';
 import 'package:manydrive/features/drive/domain/repositories/drive_repository.dart';
 import 'package:manydrive/features/drive/presentation/state/mini_player_controller.dart';
+import 'package:manydrive/injection_container.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
@@ -106,10 +108,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   Future<void> _initializePlayer(int index, {VideoPlayerController? initialController}) async {
-    // 1. Kiểm tra nếu index nằm ngoài dải hợp lệ
     if (index < 0 || index >= _videoFiles.length) return;
 
-    // 2. Nếu đã có controller hoặc đang khởi tạo rồi thì bỏ qua
     if (_videoControllers.containsKey(index) ||
         _initializingIndexes.contains(index)) {
       return;
@@ -124,22 +124,36 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       if (initialController != null && index == _currentIndex) {
         videoController = initialController;
       } else {
-        final videoData = await widget.driveRepository.getFileBytes(driveFile);
+        final settings = injector.settingsService;
 
-        // Kiểm tra xem index còn hợp lệ sau khi await (người dùng có thể đã lướt đi quá xa)
-        if (!mounted || (index - _currentIndex).abs() > 1) {
-          _initializingIndexes.remove(index);
-          return;
-        }
-
-        final cacheKey = driveFile.id.replaceAll('/', '_');
-        final cachedFile = await _getCachedVideo(cacheKey);
-
-        if (cachedFile != null && await cachedFile.exists()) {
-          videoController = VideoPlayerController.file(cachedFile);
+        if (widget.driveRepository.isS3 && settings.useS3PresignedUrl) {
+          final presignedUrl = await widget.driveRepository.getPresignedUrl(driveFile);
+          if (presignedUrl != null) {
+            videoController = VideoPlayerController.networkUrl(Uri.parse(presignedUrl));
+          } else {
+            final videoData = await widget.driveRepository.getFileBytes(driveFile);
+            final cacheKey = driveFile.id.replaceAll('/', '_');
+            final savedFile = await _saveVideoToCache(cacheKey, videoData);
+            videoController = VideoPlayerController.file(savedFile);
+          }
         } else {
-          final savedFile = await _saveVideoToCache(cacheKey, videoData);
-          videoController = VideoPlayerController.file(savedFile);
+          final cacheKey = driveFile.id.replaceAll('/', '_');
+          final cachedFile = await _getCachedVideo(cacheKey);
+
+          if (cachedFile != null && await cachedFile.exists() && settings.enableFileCache) {
+            videoController = VideoPlayerController.file(cachedFile);
+          } else {
+            final videoData = await widget.driveRepository.getFileBytes(driveFile);
+            if (settings.enableFileCache) {
+              final savedFile = await _saveVideoToCache(cacheKey, videoData);
+              videoController = VideoPlayerController.file(savedFile);
+            } else {
+              final cacheDir = await getTemporaryDirectory();
+              final tempFile = File('${cacheDir.path}/temp_${DateTime.now().millisecondsSinceEpoch}.mp4');
+              await tempFile.writeAsBytes(videoData);
+              videoController = VideoPlayerController.file(tempFile);
+            }
+          }
         }
 
         await videoController.initialize();
@@ -151,7 +165,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         return;
       }
 
-      // Đảm bảo index này vẫn là index chúng ta muốn khởi tạo
       videoController.addListener(() => _checkVideoEnd(index));
 
       final chewieController = ChewieController(
@@ -159,13 +172,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         aspectRatio:
             videoController.value.aspectRatio > 0
                 ? videoController.value.aspectRatio
-                : 9 / 16,
+                : 16 / 9,
         autoPlay: index == _currentIndex,
         looping: false,
         autoInitialize: true,
         showControlsOnInitialize: false,
         errorBuilder: (context, errorMessage) => const SizedBox.shrink(),
-
         additionalOptions: (context) {
           return [
             OptionItem(
@@ -200,9 +212,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           _initializingIndexes.remove(index);
         });
 
-        // Nếu vừa khởi tạo đúng trang hiện tại thì cho phát luôn
         if (index == _currentIndex) {
           videoController.play();
+          _updateNotification(driveFile.name, true);
         }
       } else {
         _initializingIndexes.remove(index);
@@ -215,6 +227,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         showErrorSnackBar(context, "Failed to initialize video: $e");
       }
     }
+  }
+
+  void _updateNotification(String title, bool isPlaying) {
+    NotificationService().showMediaNotification(
+      id: 9991,
+      title: title,
+      subtitle: 'Video Playing',
+      isPlaying: isPlaying,
+    );
   }
 
   Future<void> _preloadPlayer(int index) async {
@@ -248,7 +269,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   void _checkVideoEnd(int index) {
-    // Chỉ xử lý nếu trang kết thúc là trang hiện tại đang xem
     if (index != _currentIndex) return;
 
     if (!_videoControllers.containsKey(index)) return;
@@ -261,7 +281,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
     if (isEnded && isNotPlaying) {
       if (_autoPlayNext && _currentIndex < _videoFiles.length - 1) {
-        // Sử dụng post frame callback để tránh lỗi khi đang build UI
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && _currentIndex == index) {
             _pageController.nextPage(
@@ -279,29 +298,25 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
     setState(() => _currentIndex = index);
 
-    // 1. Tạm dừng tất cả các video không phải trang hiện tại
     _videoControllers.forEach((i, controller) {
       if (i != index) {
         controller.pause();
       }
     });
 
-    // 2. Phát video trang hiện tại nếu đã sẵn sàng
     if (_videoControllers.containsKey(index)) {
       _videoControllers[index]!.play();
+      _updateNotification(_videoFiles[index].name, true);
     } else {
-      // Nếu chưa có thì khởi tạo ngay lập tức
       _initializePlayer(index);
     }
 
-    // 3. Quản lý bộ nhớ: Giải phóng các controller ở quá xa (cách > 2 trang)
     final indexesToDispose =
         _videoControllers.keys.where((i) => (i - index).abs() > 2).toList();
     for (var i in indexesToDispose) {
       _disposeControllerAt(i);
     }
 
-    // 4. Preload các trang lân cận
     if (index < _videoFiles.length - 1) _preloadPlayer(index + 1);
     if (index > 0) _preloadPlayer(index - 1);
   }
@@ -338,9 +353,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             );
           }
 
-          // Pause OTHER videos before popping
-          for (var entry in _videoControllers.entries) {
-            if (entry.key != _currentIndex) {
+          final bgPlayback = injector.settingsService.backgroundPlayback;
+          if (!bgPlayback) {
+            for (var entry in _videoControllers.entries) {
               try {
                 if (entry.value.value.isInitialized) {
                   await entry.value.pause();
@@ -352,6 +367,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       },
       child: Scaffold(
         backgroundColor: Colors.black,
+        appBar: AppBar(
+          backgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+          title: Text(
+            _videoFiles.isNotEmpty ? _videoFiles[_currentIndex].name : widget.file.name,
+            style: const TextStyle(fontSize: 16),
+          ),
+        ),
         body: SafeArea(
           child: Stack(
             children: [
@@ -388,7 +411,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         miniController.isShowing &&
         _videoControllers.values.contains(miniController.videoController);
 
-    // Dispose chewie controllers first
     for (var entry in _chewieControllers.entries) {
       try {
         entry.value.dispose();
@@ -396,7 +418,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
     _chewieControllers.clear();
 
-    // Then dispose video controllers, except the one in mini player
     for (var entry in _videoControllers.entries) {
       try {
         if (!keepCurrent || entry.value != miniController.videoController) {
@@ -406,10 +427,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
     _videoControllers.clear();
 
-    // Finally dispose page controller
     try {
       _pageController.dispose();
     } catch (_) {}
+
+    NotificationService().cancel(9991);
 
     super.dispose();
   }

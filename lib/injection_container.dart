@@ -2,14 +2,16 @@ import 'package:manydrive/core/services/settings_service.dart';
 import 'package:manydrive/features/drive/data/datasources/local/credential_local_datasource.dart';
 import 'package:manydrive/features/drive/data/datasources/local/file_cache_datasource.dart';
 import 'package:manydrive/features/drive/data/datasources/remote/google_drive_datasource.dart';
+import 'package:manydrive/features/drive/data/datasources/remote/google_photos_datasource.dart';
 import 'package:manydrive/features/drive/data/datasources/remote/s3_drive_datasource.dart';
 import 'package:manydrive/features/drive/data/repositories/credential_repository_impl.dart';
 import 'package:manydrive/features/drive/data/repositories/drive_repository_impl.dart';
+import 'package:manydrive/features/drive/data/repositories/google_photos_repository_impl.dart';
 import 'package:manydrive/features/drive/domain/repositories/credential_repository.dart';
 import 'package:manydrive/features/drive/domain/repositories/drive_repository.dart';
+import 'package:manydrive/features/drive/domain/repositories/google_photos_repository.dart';
 
 /// Simple dependency injection container
-/// In a larger app, consider using get_it or riverpod
 class InjectionContainer {
   static final InjectionContainer _instance = InjectionContainer._internal();
   factory InjectionContainer() => _instance;
@@ -17,6 +19,7 @@ class InjectionContainer {
 
   // Data sources
   late final GoogleDriveDataSource _googleDriveDataSource;
+  late final GooglePhotosDataSource _googlePhotosDataSource;
   late final S3DriveDataSource _s3DriveDataSource;
   late final CredentialLocalDataSource _credentialLocalDataSource;
   late final FileCacheDataSource _fileCacheDataSource;
@@ -27,6 +30,7 @@ class InjectionContainer {
   // Repositories
   late final DriveRepository driveRepository;
   late final CredentialRepository credentialRepository;
+  late final GooglePhotosRepository googlePhotosRepository;
 
   bool _initialized = false;
 
@@ -39,6 +43,7 @@ class InjectionContainer {
 
     // Initialize data sources
     _googleDriveDataSource = GoogleDriveDataSource();
+    _googlePhotosDataSource = GooglePhotosDataSource();
     _s3DriveDataSource = S3DriveDataSource();
     _credentialLocalDataSource = CredentialLocalDataSource();
     _fileCacheDataSource = FileCacheDataSource();
@@ -51,6 +56,11 @@ class InjectionContainer {
     );
 
     credentialRepository = CredentialRepositoryImpl(_credentialLocalDataSource);
+
+    googlePhotosRepository = GooglePhotosRepositoryImpl(
+      _googleDriveDataSource,
+      _googlePhotosDataSource,
+    );
 
     _initialized = true;
   }

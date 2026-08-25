@@ -22,6 +22,9 @@ class DriveRepositoryImpl implements DriveRepository {
   );
 
   @override
+  bool get isS3 => _isS3;
+
+  @override
   bool get isLoggedIn =>
       _isS3 ? _s3DataSource.isLoggedIn : _googleDataSource.isLoggedIn;
 
@@ -33,6 +36,12 @@ class DriveRepositoryImpl implements DriveRepository {
     } else {
       await _googleDataSource.login(credentials);
     }
+  }
+
+  @override
+  Future<String?> getPresignedUrl(DriveFile file, {int expires = 3600}) async {
+    if (!_isS3) return null;
+    return await _s3DataSource.getPresignedUrl(file.id, expires: expires);
   }
 
   @override
@@ -60,12 +69,10 @@ class DriveRepositoryImpl implements DriveRepository {
         );
       }
 
-      // Save to cache
       await _cacheDataSource.saveFileList(cacheKey, files);
 
       return files.map((f) => f.toEntity()).toList();
     } catch (e) {
-      // Try to load from cache on error
       final cachedFiles = await _cacheDataSource.loadFileList(cacheKey);
       if (cachedFiles != null) {
         return cachedFiles.map((f) => f.toEntity()).toList();

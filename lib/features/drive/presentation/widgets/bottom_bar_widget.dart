@@ -23,10 +23,14 @@ class BottomBarWidget extends StatelessWidget {
         showUnselectedLabels: true,
         type: BottomNavigationBarType.fixed,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.book), label: "Files"),
+          BottomNavigationBarItem(icon: Icon(Icons.folder_outlined), label: "Files"),
           BottomNavigationBarItem(
             icon: Icon(Icons.share_rounded),
             label: "Shared",
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.photo_library_outlined),
+            label: "Photos",
           ),
         ],
       ),

@@ -4,25 +4,59 @@ import 'dart:typed_data';
 
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:googleapis_auth/auth_io.dart';
+import 'package:http/http.dart' as http;
 import 'package:manydrive/features/drive/data/models/drive_file_model.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// Remote data source for Google Drive API operations
 class GoogleDriveDataSource {
   drive.DriveApi? _driveApi;
+  http.Client? _authClient;
 
   bool get isLoggedIn => _driveApi != null;
+  http.Client? get authClient => _authClient;
 
   Future<void> login(Map<String, dynamic> credentials) async {
-    final scopes = ['https://www.googleapis.com/auth/drive'];
-    final serviceAccountCredentials = ServiceAccountCredentials.fromJson(
-      credentials,
-    );
-    final authClient = await clientViaServiceAccount(
-      serviceAccountCredentials,
-      scopes,
-    );
-    _driveApi = drive.DriveApi(authClient);
+    final scopes = [
+      'https://www.googleapis.com/auth/drive',
+      'https://www.googleapis.com/auth/photoslibrary.readonly',
+      'https://www.googleapis.com/auth/photoslibrary',
+    ];
+
+    if (credentials['auth_type'] == 'oauth' || credentials.containsKey('access_token')) {
+      final accessToken = credentials['access_token'] as String?;
+      final refreshToken = credentials['refresh_token'] as String?;
+      final expiryString = credentials['expiry'] as String?;
+      final expiry = expiryString != null
+          ? DateTime.tryParse(expiryString)?.toUtc()
+          : DateTime.now().add(const Duration(hours: 1)).toUtc();
+
+      final token = AccessToken(
+        'Bearer',
+        accessToken ?? '',
+        expiry ?? DateTime.now().add(const Duration(hours: 1)).toUtc(),
+      );
+
+      final accessCredentials = AccessCredentials(
+        token,
+        refreshToken,
+        scopes,
+      );
+
+      final client = authenticatedClient(http.Client(), accessCredentials);
+      _authClient = client;
+      _driveApi = drive.DriveApi(client);
+    } else {
+      final serviceAccountCredentials = ServiceAccountCredentials.fromJson(
+        credentials,
+      );
+      final authClient = await clientViaServiceAccount(
+        serviceAccountCredentials,
+        scopes,
+      );
+      _authClient = authClient;
+      _driveApi = drive.DriveApi(authClient);
+    }
   }
 
   Future<List<DriveFileModel>> listFiles({

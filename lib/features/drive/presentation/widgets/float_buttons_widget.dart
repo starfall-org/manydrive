@@ -1,7 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-
-import 'package:manydrive/core/services/notification_service.dart';
+import 'package:manydrive/core/services/upload_manager.dart';
 import 'package:manydrive/features/drive/presentation/state/drive_state.dart';
 
 class FloatButtonsWidget extends StatefulWidget {
@@ -54,61 +53,25 @@ class _FloatButtonsWidgetState extends State<FloatButtonsWidget>
     });
   }
 
-  Future<void> _uploadFile(BuildContext context) async {
+  Future<void> _uploadFiles(BuildContext context) async {
     _toggle();
-    final result = await FilePicker.platform.pickFiles();
-    if (result == null) return;
+    final result = await FilePicker.platform.pickFiles(allowMultiple: true);
+    if (result == null || result.files.isEmpty) return;
 
-    final filePath = result.files.single.path ?? '';
-    if (filePath.isEmpty) return;
+    final validFiles = result.files.where((f) => f.path != null && f.path!.isNotEmpty).toList();
+    if (validFiles.isEmpty) return;
 
-    final notificationService = NotificationService();
-    final notificationId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    final fileName = result.files.single.name;
-    final fileSize = result.files.single.size;
+    final paths = validFiles.map((f) => f.path!).toList();
+    final names = validFiles.map((f) => f.name).toList();
+    final sizes = validFiles.map((f) => f.size).toList();
 
-    try {
-      await notificationService.initialize();
-      await notificationService.showProgress(
-        id: notificationId,
-        title: 'Uploading',
-        body: fileName,
-        progress: 0,
-        maxProgress: 100,
-      );
-
-      int uploadedBytes = 0;
-
-      await widget.driveState.uploadFile(
-        filePath,
-        widget.tabKey,
-        onProgress: (bytes) async {
-          uploadedBytes += bytes;
-          final progress = ((uploadedBytes / fileSize) * 100).round();
-          await notificationService.showProgress(
-            id: notificationId,
-            title: 'Uploading',
-            body: fileName,
-            progress: progress,
-            maxProgress: 100,
-          );
-        },
-      );
-
-      await notificationService.showTransferComplete(
-        id: notificationId,
-        title: '✅ Upload Complete',
-        body: 'Uploaded: $fileName',
-      );
-
-      widget.driveState.refresh(widget.tabKey);
-    } catch (e) {
-      await notificationService.cancel(notificationId);
-      await notificationService.showError(
-        title: 'Upload Failed',
-        message: 'Could not upload $fileName',
-      );
-    }
+    await UploadManager().startUploads(
+      filePaths: paths,
+      fileNames: names,
+      fileSizes: sizes,
+      driveState: widget.driveState,
+      tabKey: widget.tabKey,
+    );
   }
 
   Future<void> _createFolder(BuildContext context) async {
@@ -168,8 +131,8 @@ class _FloatButtonsWidgetState extends State<FloatButtonsWidget>
               const SizedBox(height: 10),
               FloatingActionButton.small(
                 heroTag: 'upload_file',
-                onPressed: () => _uploadFile(context),
-                tooltip: 'Upload File',
+                onPressed: () => _uploadFiles(context),
+                tooltip: 'Upload Files',
                 child: const Icon(Icons.upload_file),
               ),
               const SizedBox(height: 10),

@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:manydrive/features/drive/domain/repositories/credential_repository.dart';
 
 void showLoginDialog(
@@ -45,10 +45,22 @@ class _LoginDialogState extends State<_LoginDialog>
   final _s3BucketController = TextEditingController();
   final _s3RegionController = TextEditingController();
 
+  final _oauthEmailController = TextEditingController();
+  final _oauthAccessTokenController = TextEditingController();
+  final _oauthRefreshTokenController = TextEditingController();
+
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: [
+      'https://www.googleapis.com/auth/drive',
+      'https://www.googleapis.com/auth/photoslibrary.readonly',
+      'https://www.googleapis.com/auth/photoslibrary',
+    ],
+  );
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -60,6 +72,9 @@ class _LoginDialogState extends State<_LoginDialog>
     _s3SecretKeyController.dispose();
     _s3BucketController.dispose();
     _s3RegionController.dispose();
+    _oauthEmailController.dispose();
+    _oauthAccessTokenController.dispose();
+    _oauthRefreshTokenController.dispose();
     super.dispose();
   }
 
@@ -72,8 +87,59 @@ class _LoginDialogState extends State<_LoginDialog>
     }
   }
 
+  Future<void> _handleGoogleNativeSignIn() async {
+    try {
+      final account = await _googleSignIn.signIn();
+      if (account != null) {
+        final auth = await account.authentication;
+        final credData = {
+          'auth_type': 'oauth',
+          'client_email': account.email,
+          'access_token': auth.accessToken,
+          'id_token': auth.idToken,
+          'display_name': account.displayName,
+        };
+        widget.credentialRepository.saveCredential(jsonEncode(credData));
+        widget.onLogin(account.email);
+        if (mounted) Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        _showErrorDialog(context, 'Google Sign-In failed: $e');
+      }
+    }
+  }
+
   void _handleLogin() {
     if (_tabController.index == 0) {
+      // OAuth Web / Manual Token
+      if (_oauthEmailController.text.isEmpty ||
+          _oauthAccessTokenController.text.isEmpty) {
+        _showErrorDialog(
+          context,
+          'Please enter Email and Access Token or use Google Sign-In button.',
+        );
+        return;
+      }
+
+      final oauthData = {
+        'auth_type': 'oauth',
+        'client_email': _oauthEmailController.text.trim(),
+        'access_token': _oauthAccessTokenController.text.trim(),
+        'refresh_token': _oauthRefreshTokenController.text.trim().isEmpty
+            ? null
+            : _oauthRefreshTokenController.text.trim(),
+      };
+
+      try {
+        final jsonString = jsonEncode(oauthData);
+        widget.credentialRepository.saveCredential(jsonString);
+        widget.onLogin(_oauthEmailController.text.trim());
+        Navigator.of(context).pop();
+      } catch (e) {
+        _showErrorDialog(context, e.toString());
+      }
+    } else if (_tabController.index == 1) {
       // Service Account
       final content = _serviceAccountController.text;
       if (_isValidServiceAccount(content)) {
@@ -126,20 +192,26 @@ class _LoginDialogState extends State<_LoginDialog>
       title: const Text('Login'),
       contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
       content: SizedBox(
-        width: 400,
+        width: 420,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TabBar(
               controller: _tabController,
-              tabs: const [Tab(text: 'Service Account'), Tab(text: 'S3')],
+              isScrollable: true,
+              tabs: const [
+                Tab(text: 'Google OAuth'),
+                Tab(text: 'Service Account'),
+                Tab(text: 'S3'),
+              ],
             ),
             const SizedBox(height: 16),
             SizedBox(
-              height: 320,
+              height: 330,
               child: TabBarView(
                 controller: _tabController,
                 children: [
+                  _buildGoogleOAuthTab(),
                   _buildServiceAccountTab(),
                   _buildS3Tab(),
                 ],
@@ -155,6 +227,63 @@ class _LoginDialogState extends State<_LoginDialog>
         ),
         TextButton(onPressed: _handleLogin, child: const Text('OK')),
       ],
+    );
+  }
+
+  Widget _buildGoogleOAuthTab() {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size.fromHeight(48),
+              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+              foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
+            onPressed: _handleGoogleNativeSignIn,
+            icon: const Icon(Icons.account_circle),
+            label: const Text('Sign in with Google (Native)'),
+          ),
+          const SizedBox(height: 16),
+          const Row(
+            children: [
+              Expanded(child: Divider()),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8),
+                child: Text('OR OAuth Web Token', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              ),
+              Expanded(child: Divider()),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _oauthEmailController,
+            decoration: const InputDecoration(
+              labelText: 'Google Account Email',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _oauthAccessTokenController,
+            decoration: const InputDecoration(
+              labelText: 'OAuth Access Token',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _oauthRefreshTokenController,
+            decoration: const InputDecoration(
+              labelText: 'Refresh Token (optional)',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

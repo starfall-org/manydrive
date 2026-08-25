@@ -42,7 +42,7 @@ class NotificationService {
 
   void _onNotificationTapped(NotificationResponse response) {
     if (kDebugMode) {
-      print('Notification tapped: ${response.payload}');
+      print('Notification tapped: ${response.payload}, actionId: ${response.actionId}');
     }
   }
 
@@ -52,6 +52,57 @@ class NotificationService {
     }
     final status = await Permission.notification.request();
     return status.isGranted;
+  }
+
+  Future<void> showMediaNotification({
+    required int id,
+    required String title,
+    required String subtitle,
+    required bool isPlaying,
+  }) async {
+    if (!_initialized) await initialize();
+
+    final androidDetails = AndroidNotificationDetails(
+      'media_channel',
+      'Media Playback',
+      channelDescription: 'Media playback controls and progress',
+      importance: Importance.low,
+      priority: Priority.low,
+      ongoing: isPlaying,
+      autoCancel: false,
+      onlyAlertOnce: true,
+      showWhen: false,
+      actions: <AndroidNotificationAction>[
+        const AndroidNotificationAction(
+          'media_prev',
+          'Previous',
+          showsUserInterface: true,
+        ),
+        AndroidNotificationAction(
+          isPlaying ? 'media_pause' : 'media_play',
+          isPlaying ? 'Pause' : 'Play',
+          showsUserInterface: true,
+        ),
+        const AndroidNotificationAction(
+          'media_next',
+          'Next',
+          showsUserInterface: true,
+        ),
+      ],
+    );
+
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: false,
+      presentBadge: false,
+      presentSound: false,
+    );
+
+    final details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    await _notifications.show(id, title, subtitle, details);
   }
 
   Future<void> showNotification({

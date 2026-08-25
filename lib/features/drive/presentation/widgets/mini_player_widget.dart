@@ -1,9 +1,6 @@
-import 'dart:async';
-
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:manydrive/features/drive/presentation/state/mini_player_controller.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 
 class MiniPlayerWidget extends StatefulWidget {
@@ -16,164 +13,90 @@ class MiniPlayerWidget extends StatefulWidget {
 }
 
 class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
-  Offset _offset = Offset.zero;
-  final double _width = 200;
-  final double _height = 120;
-  final double _margin = 16.0;
-  bool _isInitialized = false;
-  bool _showControls = true;
-  Timer? _hideTimer;
-  bool _autoPlayNext = true;
-
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_handleUpdate);
-    _loadAutoPlaySetting();
-    _startHideTimer();
-  }
-
-  Future<void> _loadAutoPlaySetting() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _autoPlayNext = prefs.getBool('video_autoplay_next') ?? true;
-      });
-    }
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_isInitialized) {
-      final size = MediaQuery.of(context).size;
-      final padding = MediaQuery.of(context).padding;
-      // Mặc định ở góc dưới bên phải
-      _offset = Offset(
-        size.width - _width - _margin,
-        size.height - _height - _margin - padding.bottom - 60, // Tránh bottom bar
-      );
-      _isInitialized = true;
-    }
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_handleUpdate);
-    _hideTimer?.cancel();
     super.dispose();
   }
 
   void _handleUpdate() {
     if (mounted) {
       setState(() {});
-      if (widget.controller.isShowing) {
-        if (!_showControls) {
-          _toggleControls();
-        }
-        // Kiểm tra cài đặt autoplay mỗi khi mini player hiện lên
-        _loadAutoPlaySetting();
-      }
     }
-  }
-
-  void _startHideTimer() {
-    _hideTimer?.cancel();
-    _hideTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted && _showControls) {
-        setState(() {
-          _showControls = false;
-        });
-      }
-    });
-  }
-
-  void _toggleControls() {
-    setState(() {
-      _showControls = !_showControls;
-    });
-    if (_showControls) {
-      _startHideTimer();
-    }
-  }
-
-  void _snapToClosestCorner() {
-    final size = MediaQuery.of(context).size;
-    final padding = MediaQuery.of(context).padding;
-    
-    // Các vị trí hít vào (có tính đến margin và safe area)
-    final double left = _margin;
-    final double right = size.width - _width - _margin;
-    final double top = _margin + padding.top;
-    final double bottom = size.height - _height - _margin - padding.bottom - 60;
-
-    final double centerX = _offset.dx + _width / 2;
-    final double centerY = _offset.dy + _height / 2;
-
-    double targetX = centerX < size.width / 2 ? left : right;
-    double targetY = centerY < size.height / 2 ? top : bottom;
-
-    setState(() {
-      _offset = Offset(targetX, targetY);
-    });
-    _startHideTimer();
   }
 
   @override
   Widget build(BuildContext context) {
     if (!widget.controller.isShowing) return const SizedBox.shrink();
 
-    return AnimatedPositioned(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutBack,
-      left: _offset.dx,
-      top: _offset.dy,
+    final mediaQuery = MediaQuery.of(context);
+    final bottomPadding = mediaQuery.padding.bottom + 56.0; // Dock above bottom nav bar
+
+    return Positioned(
+      left: 8,
+      right: 8,
+      bottom: bottomPadding,
       child: GestureDetector(
-        onTap: _toggleControls,
-        onPanUpdate: (details) {
-          setState(() {
-            _offset += details.delta;
-            if (!_showControls) _showControls = true;
-          });
-          _hideTimer?.cancel();
-        },
-        onPanEnd: (details) {
-          _snapToClosestCorner();
-        },
+        onTap: () => widget.controller.expand(),
         child: Material(
-          elevation: 8,
+          elevation: 10,
           borderRadius: BorderRadius.circular(12),
-          clipBehavior: Clip.antiAlias,
-          color: Colors.black,
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
           child: Container(
-            width: _width,
-            height: _height,
+            height: 64,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              border: Border.all(color: Colors.white24),
               borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.5),
+              ),
             ),
-            child: Stack(
+            child: Row(
               children: [
-                _buildPlayer(),
-                AnimatedOpacity(
-                  opacity: _showControls ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 200),
-                  child: IgnorePointer(
-                    ignoring: !_showControls,
-                    child: Stack(
-                      children: [
-                        _buildTopBar(),
-                        _buildControls(),
-                        // Nút expand ở giữa
-                        Center(
-                          child: IconButton(
-                            icon: const Icon(Icons.fullscreen, color: Colors.white, size: 30),
-                            onPressed: () => widget.controller.expand(),
-                          ),
+                _buildThumbnail(),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.controller.title ?? "Now Playing",
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        widget.controller.type == MiniPlayerType.video
+                            ? "Video"
+                            : "Audio",
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant
+                              .withValues(alpha: 0.8),
+                        ),
+                      ),
+                    ],
                   ),
+                ),
+                _buildControls(),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  onPressed: () => widget.controller.close(),
+                  tooltip: 'Close',
+                  visualDensity: VisualDensity.compact,
                 ),
               ],
             ),
@@ -183,148 +106,94 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
     );
   }
 
-  Widget _buildPlayer() {
+  Widget _buildThumbnail() {
     if (widget.controller.type == MiniPlayerType.video) {
-      if (widget.controller.videoController != null) {
-        return Center(
-          child: AspectRatio(
-            aspectRatio: widget.controller.videoController!.value.aspectRatio,
-            child: VideoPlayer(widget.controller.videoController!),
+      final vCtrl = widget.controller.videoController;
+      if (vCtrl != null && vCtrl.value.isInitialized) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            width: 56,
+            height: 52,
+            child: AspectRatio(
+              aspectRatio: vCtrl.value.aspectRatio > 0 ? vCtrl.value.aspectRatio : 16 / 9,
+              child: VideoPlayer(vCtrl),
+            ),
           ),
         );
       } else {
-        return const Center(
-          child: CircularProgressIndicator(color: Colors.white),
+        return Container(
+          width: 56,
+          height: 52,
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Center(
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+          ),
         );
       }
-    }
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.music_note, color: Colors.white, size: 40),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-            child: Text(
-              widget.controller.title ?? "Unknown",
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTopBar() {
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.black54, Colors.transparent],
-          ),
+    } else {
+      return Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(8),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.close, color: Colors.white, size: 20),
-              onPressed: () => widget.controller.close(),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-            ),
-          ],
+        child: Icon(
+          Icons.music_note,
+          color: Theme.of(context).colorScheme.onPrimaryContainer,
+          size: 28,
         ),
-      ),
-    );
-  }
-
-  void _checkVideoEnd() {
-    if (widget.controller.type != MiniPlayerType.video) return;
-    final controller = widget.controller.videoController;
-    if (controller == null || !controller.value.isInitialized) return;
-
-    final isEnded = controller.value.position >= controller.value.duration;
-    final isNotPlaying = !controller.value.isPlaying;
-
-    if (isEnded && isNotPlaying && _autoPlayNext) {
-      final allFiles = widget.controller.allFiles;
-      final currentFile = widget.controller.currentFile;
-      if (allFiles != null && currentFile != null) {
-        final currentIndex = allFiles.indexWhere((f) => f.id == currentFile.id);
-        if (currentIndex != -1 && currentIndex < allFiles.length - 1) {
-          // Play next video
-          widget.controller.playNext();
-        }
-      }
+      );
     }
   }
 
   Widget _buildControls() {
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Container(
-        height: 40,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.bottomCenter,
-            end: Alignment.topCenter,
-            colors: [Colors.black54, Colors.transparent],
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (widget.controller.type == MiniPlayerType.video && widget.controller.videoController != null)
-              ValueListenableBuilder(
-                valueListenable: widget.controller.videoController!,
-                builder: (context, VideoPlayerValue value, child) {
-                  // Kiểm tra kết thúc video để autoplay
-                  _checkVideoEnd();
-                  return IconButton(
-                    icon: Icon(
-                      value.isPlaying ? Icons.pause : Icons.play_arrow,
-                      color: Colors.white,
-                      size: 24,
-                    ),
-                    onPressed: () {
-                      value.isPlaying
-                          ? widget.controller.videoController!.pause()
-                          : widget.controller.videoController!.play();
-                      _startHideTimer();
-                    },
-                  );
-                },
-              )
-            else if (widget.controller.type == MiniPlayerType.audio)
-              StreamBuilder(
-                stream: widget.controller.audioPlayer!.onPlayerStateChanged,
-                builder: (context, snapshot) {
-                  final isPlaying = snapshot.data == PlayerState.playing;
-                  return IconButton(
-                    icon: Icon(
-                      isPlaying ? Icons.pause : Icons.play_arrow,
-                      color: Colors.white,
-                      size: 24,
-                    ),
-                    onPressed: () {
-                      isPlaying
-                          ? widget.controller.audioPlayer!.pause()
-                          : widget.controller.audioPlayer!.resume();
-                      _startHideTimer();
-                    },
-                  );
-                },
-              ),
-          ],
-        ),
-      ),
-    );
+    if (widget.controller.type == MiniPlayerType.video &&
+        widget.controller.videoController != null) {
+      return ValueListenableBuilder(
+        valueListenable: widget.controller.videoController!,
+        builder: (context, VideoPlayerValue value, child) {
+          return IconButton(
+            icon: Icon(
+              value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+              size: 28,
+            ),
+            onPressed: () {
+              value.isPlaying
+                  ? widget.controller.videoController!.pause()
+                  : widget.controller.videoController!.play();
+            },
+          );
+        },
+      );
+    } else if (widget.controller.type == MiniPlayerType.audio &&
+        widget.controller.audioPlayer != null) {
+      return StreamBuilder<PlayerState>(
+        stream: widget.controller.audioPlayer!.onPlayerStateChanged,
+        builder: (context, snapshot) {
+          final isPlaying = snapshot.data == PlayerState.playing;
+          return IconButton(
+            icon: Icon(
+              isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+              size: 28,
+            ),
+            onPressed: () {
+              isPlaying
+                  ? widget.controller.audioPlayer!.pause()
+                  : widget.controller.audioPlayer!.resume();
+            },
+          );
+        },
+      );
+    }
+    return const SizedBox.shrink();
   }
 }
