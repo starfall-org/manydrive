@@ -1,3 +1,4 @@
+import 'package:audioplayers/audioplayers.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import 'package:manydrive/features/drive/domain/repositories/credential_reposito
 import 'package:manydrive/features/drive/domain/repositories/drive_repository.dart';
 import 'package:manydrive/features/drive/presentation/dialogs/login_dialog.dart';
 import 'package:manydrive/features/drive/presentation/pages/file_viewer_page.dart';
+import 'package:manydrive/features/drive/presentation/pages/media/audio_player_page.dart';
 import 'package:manydrive/features/drive/presentation/pages/media/video_player_page.dart';
 import 'package:manydrive/features/drive/presentation/pages/photos/google_photos_page.dart';
 import 'package:manydrive/features/drive/presentation/state/drive_state.dart';
@@ -20,6 +22,7 @@ import 'package:manydrive/features/drive/presentation/widgets/side_menu_widget.d
 import 'package:manydrive/features/drive/presentation/widgets/top_bar_widget.dart';
 import 'package:manydrive/features/drive/presentation/widgets/upload_progress_widget.dart';
 import 'package:manydrive/injection_container.dart';
+import 'package:video_player/video_player.dart';
 
 class HomePage extends StatefulWidget {
   final DriveRepository driveRepository;
@@ -56,29 +59,49 @@ class _HomePageState extends State<HomePage> {
       widget.credentialRepository,
     );
     _pageController = PageController(initialPage: 0);
-    MiniPlayerController().setOnExpand(_onExpandVideoPlayer);
+    MiniPlayerController().setOnExpand(_onExpandMedia);
     _initialize();
   }
 
-  void _onExpandVideoPlayer(
+  void _onExpandMedia(
     DriveFile file,
     List<DriveFile>? allFiles,
-    DriveRepository driveRepository,
-  ) {
+    DriveRepository driveRepository, {
+    AudioPlayer? audioPlayer,
+    Uint8List? audioData,
+    VideoPlayerController? videoController,
+  }) {
     if (mounted) {
       final miniController = MiniPlayerController();
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder:
-              (context) => VideoPlayerPage(
-                file: file,
-                allFiles: allFiles,
-                driveRepository: driveRepository,
-                initialController: miniController.videoController,
-              ),
-        ),
-      );
+      if (file.isVideo || miniController.type == MiniPlayerType.video) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder:
+                (context) => VideoPlayerPage(
+                  file: file,
+                  allFiles: allFiles,
+                  driveRepository: driveRepository,
+                  initialController: videoController ?? miniController.videoController,
+                ),
+          ),
+        );
+      } else {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder:
+                (context) => AudioPlayerPage(
+                  title: file.name,
+                  file: file,
+                  allFiles: allFiles,
+                  audioData: audioData ?? miniController.audioData,
+                  driveRepository: driveRepository,
+                  initialAudioPlayer: audioPlayer ?? miniController.audioPlayer,
+                ),
+          ),
+        );
+      }
     }
   }
 
@@ -96,10 +119,12 @@ class _HomePageState extends State<HomePage> {
   }
 
   bool _isS3Account = false;
+  bool _isServiceAccount = false;
 
   Future<void> _login(String clientEmail) async {
     final credential = await widget.credentialRepository.getCredential(clientEmail);
     _isS3Account = credential?.isS3 ?? false;
+    _isServiceAccount = credential?.isServiceAccount ?? false;
 
     await _driveState.login(clientEmail);
 
@@ -325,7 +350,7 @@ class _HomePageState extends State<HomePage> {
                               tabKey: 'shared',
                               isSharedWithMe: true,
                             ),
-                            const GooglePhotosPage(),
+                            if (!_isServiceAccount) const GooglePhotosPage(),
                           ],
                         ),
                   bottomNavigationBar: _isS3Account
@@ -333,6 +358,7 @@ class _HomePageState extends State<HomePage> {
                       : BottomBarWidget(
                           selectedIndex: _selectedIndex,
                           onItemTapped: _onItemTapped,
+                          showPhotosTab: !_isServiceAccount,
                         ),
                   floatingActionButton: _selectedIndex == 2
                       ? null

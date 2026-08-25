@@ -60,7 +60,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
             child: Row(
               children: [
                 _buildThumbnail(),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -91,10 +91,29 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                     ],
                   ),
                 ),
+                IconButton(
+                  icon: const Icon(Icons.skip_previous_rounded, size: 24),
+                  onPressed: () => widget.controller.playPrevious(),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Previous',
+                ),
                 _buildControls(),
+                IconButton(
+                  icon: const Icon(Icons.skip_next_rounded, size: 24),
+                  onPressed: () => widget.controller.playNext(),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Next',
+                ),
+                const SizedBox(width: 4),
                 IconButton(
                   icon: const Icon(Icons.close, size: 20),
                   onPressed: () => widget.controller.close(),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                   tooltip: 'Close',
                   visualDensity: VisualDensity.compact,
                 ),
@@ -113,7 +132,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
         return ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: SizedBox(
-            width: 56,
+            width: 52,
             height: 52,
             child: AspectRatio(
               aspectRatio: vCtrl.value.aspectRatio > 0 ? vCtrl.value.aspectRatio : 16 / 9,
@@ -123,7 +142,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
         );
       } else {
         return Container(
-          width: 56,
+          width: 52,
           height: 52,
           decoration: BoxDecoration(
             color: Colors.black,
@@ -140,8 +159,8 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
       }
     } else {
       return Container(
-        width: 52,
-        height: 52,
+        width: 48,
+        height: 48,
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.primaryContainer,
           borderRadius: BorderRadius.circular(8),
@@ -149,7 +168,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
         child: Icon(
           Icons.music_note,
           color: Theme.of(context).colorScheme.onPrimaryContainer,
-          size: 28,
+          size: 26,
         ),
       );
     }
@@ -166,6 +185,8 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
               value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
               size: 28,
             ),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             onPressed: () {
               value.isPlaying
                   ? widget.controller.videoController!.pause()
@@ -185,6 +206,8 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
               isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
               size: 28,
             ),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             onPressed: () {
               isPlaying
                   ? widget.controller.audioPlayer!.pause()

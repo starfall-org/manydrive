@@ -1,4 +1,4 @@
-/// Domain entity representing a Drive credential (Google Service Account or S3)
+/// Domain entity representing a Drive credential (Google OAuth, Google Service Account, or S3)
 class Credential {
   final String? clientEmail;
   final String? projectId;
@@ -21,6 +21,8 @@ class Credential {
   });
 
   bool get isS3 => rawData.containsKey('s3_endpoint') || s3Endpoint != null;
+  bool get isOAuth => rawData['auth_type'] == 'oauth';
+  bool get isServiceAccount => !isS3 && !isOAuth;
 
   String get username {
     if (isS3) {
