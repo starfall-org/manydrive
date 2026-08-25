@@ -2,7 +2,7 @@ name: manydrive
 description: "ManyDrive is a file manager for Google Drive."
 publish_to: "none"
 
-version: 2.3.7+6
+version: 2.3.8+7
 
 environment:
   sdk: ^3.7.0-209.1.beta
