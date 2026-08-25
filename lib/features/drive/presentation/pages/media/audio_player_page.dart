@@ -11,15 +11,19 @@ import 'package:manydrive/injection_container.dart';
 class AudioPlayerPage extends StatefulWidget {
   final Uint8List? audioData;
   final DriveFile? file;
+  final List<DriveFile>? allFiles;
   final DriveRepository? driveRepository;
   final String title;
+  final AudioPlayer? initialAudioPlayer;
 
   const AudioPlayerPage({
     super.key,
     this.audioData,
     this.file,
+    this.allFiles,
     this.driveRepository,
     required this.title,
+    this.initialAudioPlayer,
   });
 
   @override
@@ -36,7 +40,12 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
   @override
   void initState() {
     super.initState();
-    _audioPlayer = AudioPlayer();
+    if (widget.initialAudioPlayer != null) {
+      _audioPlayer = widget.initialAudioPlayer!;
+      _isLoading = false;
+    } else {
+      _audioPlayer = AudioPlayer();
+    }
     _initAudio();
   }
 
@@ -62,25 +71,27 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
       }
     });
 
-    try {
-      if (widget.file != null &&
-          widget.driveRepository != null &&
-          widget.driveRepository!.isS3 &&
-          injector.settingsService.useS3PresignedUrl) {
-        final presignedUrl = await widget.driveRepository!.getPresignedUrl(widget.file!);
-        if (presignedUrl != null) {
-          await _audioPlayer.setSource(UrlSource(presignedUrl));
+    if (widget.initialAudioPlayer == null) {
+      try {
+        if (widget.file != null &&
+            widget.driveRepository != null &&
+            widget.driveRepository!.isS3 &&
+            injector.settingsService.useS3PresignedUrl) {
+          final presignedUrl = await widget.driveRepository!.getPresignedUrl(widget.file!);
+          if (presignedUrl != null) {
+            await _audioPlayer.setSource(UrlSource(presignedUrl));
+          } else if (widget.audioData != null) {
+            await _audioPlayer.setSourceBytes(widget.audioData!);
+          }
         } else if (widget.audioData != null) {
           await _audioPlayer.setSourceBytes(widget.audioData!);
         }
-      } else if (widget.audioData != null) {
-        await _audioPlayer.setSourceBytes(widget.audioData!);
-      }
 
-      await _audioPlayer.resume();
-      if (mounted) setState(() => _isLoading = false);
-    } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+        await _audioPlayer.resume();
+        if (mounted) setState(() => _isLoading = false);
+      } catch (e) {
+        if (mounted) setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -94,8 +105,8 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
   void dispose() {
     if (!MiniPlayerController().isShowing) {
       _audioPlayer.dispose();
+      NotificationService().cancel(9992);
     }
-    NotificationService().cancel(9992);
     super.dispose();
   }
 
@@ -108,6 +119,10 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
           MiniPlayerController().showAudio(
             player: _audioPlayer,
             title: widget.title,
+            file: widget.file,
+            audioData: widget.audioData,
+            driveRepository: widget.driveRepository,
+            allFiles: widget.allFiles,
           );
         }
       },

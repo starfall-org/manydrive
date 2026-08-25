@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:manydrive/core/services/settings_service.dart';
 import 'package:manydrive/injection_container.dart';
 
-class SettingsDialog extends StatefulWidget {
+class SettingsPage extends StatefulWidget {
   final ThemeMode themeMode;
   final bool superDarkMode;
   final bool dynamicColor;
@@ -10,7 +10,7 @@ class SettingsDialog extends StatefulWidget {
   final Function(bool) onSuperDarkModeChanged;
   final Function(bool) onDynamicColorChanged;
 
-  const SettingsDialog({
+  const SettingsPage({
     super.key,
     required this.themeMode,
     required this.superDarkMode,
@@ -21,10 +21,10 @@ class SettingsDialog extends StatefulWidget {
   });
 
   @override
-  State<SettingsDialog> createState() => _SettingsDialogState();
+  State<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _SettingsDialogState extends State<SettingsDialog> {
+class _SettingsPageState extends State<SettingsPage> {
   late ThemeMode _themeMode;
   late bool _superDarkMode;
   late bool _dynamicColor;
@@ -60,186 +60,237 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Row(
-        children: [Icon(Icons.settings), SizedBox(width: 8), Text('Settings')],
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Cài đặt hệ thống'),
+        centerTitle: true,
       ),
-      content: SizedBox(
-        width: 420,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Theme Mode',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<int>(
-                  segments: const [
-                    ButtonSegment(
-                      value: 0,
-                      label: Text('Auto'),
-                      icon: Icon(Icons.auto_mode),
-                    ),
-                    ButtonSegment(
-                      value: 1,
-                      label: Text('Light'),
-                      icon: Icon(Icons.light_mode),
-                    ),
-                    ButtonSegment(
-                      value: 2,
-                      label: Text('Dark'),
-                      icon: Icon(Icons.dark_mode),
-                    ),
-                  ],
-                  selected: {_themeModeIndex},
-                  onSelectionChanged: (selection) {
-                    final index = selection.first;
-                    final mode =
-                        index == 1
-                            ? ThemeMode.light
-                            : index == 2
-                            ? ThemeMode.dark
-                            : ThemeMode.system;
-                    setState(() => _themeMode = mode);
-                    widget.onThemeModeChanged(mode);
-                  },
-                ),
-              ),
-              const SizedBox(height: 12),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text(
-                  'Super Dark Mode',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-                subtitle: const Text(
-                  'Pure black background for OLED screens',
-                  style: TextStyle(fontSize: 12),
-                ),
-                value: _superDarkMode,
-                onChanged: (value) {
-                  setState(() => _superDarkMode = value);
-                  widget.onSuperDarkModeChanged(value);
-                },
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text(
-                  'Dynamic Color',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-                subtitle: const Text(
-                  'Use system wallpaper colors (Material You)',
-                  style: TextStyle(fontSize: 12),
-                ),
-                value: _dynamicColor,
-                onChanged: (value) {
-                  setState(() => _dynamicColor = value);
-                  widget.onDynamicColorChanged(value);
-                },
-              ),
-              const Divider(height: 24),
-              const Text(
-                'S3 Storage & Streaming',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text(
-                  'S3 Presigned URL',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                ),
-                subtitle: const Text(
-                  'Stream media directly via Presigned URL instead of downloading full bytes first',
-                  style: TextStyle(fontSize: 11),
-                ),
-                value: _useS3PresignedUrl,
-                onChanged: (value) {
-                  setState(() => _useS3PresignedUrl = value);
-                  _settingsService.setUseS3PresignedUrl(value);
-                },
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text(
-                  'File Caching',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                ),
-                subtitle: const Text(
-                  'Cache media & files locally for faster playback and offline access',
-                  style: TextStyle(fontSize: 11),
-                ),
-                value: _enableFileCache,
-                onChanged: (value) {
-                  setState(() => _enableFileCache = value);
-                  _settingsService.setEnableFileCache(value);
-                },
-              ),
-              const Divider(height: 24),
-              const Text(
-                'Upload & Playback',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        children: [
+          _buildSectionHeader('Giao diện & Chủ đề'),
+          const SizedBox(height: 8),
+          Card(
+            elevation: 0,
+            color: colorScheme.surfaceContainerLow,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Multi-file Upload Mode',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    'Chế độ giao diện',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
-                  DropdownButton<String>(
-                    value: _uploadMode,
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'sequential',
-                        child: Text('Sequential', style: TextStyle(fontSize: 13)),
-                      ),
-                      DropdownMenuItem(
-                        value: 'parallel',
-                        child: Text('Parallel', style: TextStyle(fontSize: 13)),
-                      ),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() => _uploadMode = val);
-                        _settingsService.setUploadMode(val);
-                      }
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<int>(
+                      segments: const [
+                        ButtonSegment(
+                          value: 0,
+                          label: Text('Tự động'),
+                          icon: Icon(Icons.auto_mode, size: 18),
+                        ),
+                        ButtonSegment(
+                          value: 1,
+                          label: Text('Sáng'),
+                          icon: Icon(Icons.light_mode, size: 18),
+                        ),
+                        ButtonSegment(
+                          value: 2,
+                          label: Text('Tối'),
+                          icon: Icon(Icons.dark_mode, size: 18),
+                        ),
+                      ],
+                      selected: {_themeModeIndex},
+                      onSelectionChanged: (selection) {
+                        final index = selection.first;
+                        final mode =
+                            index == 1
+                                ? ThemeMode.light
+                                : index == 2
+                                ? ThemeMode.dark
+                                : ThemeMode.system;
+                        setState(() => _themeMode = mode);
+                        widget.onThemeModeChanged(mode);
+                      },
+                    ),
+                  ),
+                  const Divider(height: 24),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'Chế độ Super Dark',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      'Nền đen tuyệt đối tối ưu cho màn hình OLED',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    value: _superDarkMode,
+                    onChanged: (value) {
+                      setState(() => _superDarkMode = value);
+                      widget.onSuperDarkModeChanged(value);
+                    },
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'Màu sắc động (Dynamic Color)',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      'Tự động đồng bộ màu theo hình nền thiết bị (Material You)',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    value: _dynamicColor,
+                    onChanged: (value) {
+                      setState(() => _dynamicColor = value);
+                      widget.onDynamicColorChanged(value);
                     },
                   ),
                 ],
               ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text(
-                  'Background Playback',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                ),
-                subtitle: const Text(
-                  'Keep audio/video playing when app is in background or minimized',
-                  style: TextStyle(fontSize: 11),
-                ),
-                value: _backgroundPlayback,
-                onChanged: (value) {
-                  setState(() => _backgroundPlayback = value);
-                  _settingsService.setBackgroundPlayback(value);
-                },
-              ),
-            ],
+            ),
           ),
+          const SizedBox(height: 16),
+          _buildSectionHeader('Lưu trữ S3 & Phát trực tuyến'),
+          const SizedBox(height: 8),
+          Card(
+            elevation: 0,
+            color: colorScheme.surfaceContainerLow,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'Dùng S3 Presigned URL',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      'Phát media trực tiếp qua URL thay vì tải toàn bộ file về máy',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    value: _useS3PresignedUrl,
+                    onChanged: (value) {
+                      setState(() => _useS3PresignedUrl = value);
+                      _settingsService.setUseS3PresignedUrl(value);
+                    },
+                  ),
+                  const Divider(height: 16),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'Bộ nhớ đệm (File Cache)',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      'Lưu bản sao cục bộ để mở file & phát media nhanh hơn',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    value: _enableFileCache,
+                    onChanged: (value) {
+                      setState(() => _enableFileCache = value);
+                      _settingsService.setEnableFileCache(value);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildSectionHeader('Tải lên & Trình phát'),
+          const SizedBox(height: 8),
+          Card(
+            elevation: 0,
+            color: colorScheme.surfaceContainerLow,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Chế độ tải lên nhiều file',
+                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Tải tuần tự hoặc tải song song cùng lúc',
+                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                      DropdownButton<String>(
+                        value: _uploadMode,
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'sequential',
+                            child: Text('Tuần tự', style: TextStyle(fontSize: 13)),
+                          ),
+                          DropdownMenuItem(
+                            value: 'parallel',
+                            child: Text('Song song', style: TextStyle(fontSize: 13)),
+                          ),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() => _uploadMode = val);
+                            _settingsService.setUploadMode(val);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 16),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'Phát trong nền (Background Playback)',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      'Tiếp tục phát audio/video khi ẩn ứng dụng hoặc chuyển ứng dụng khác',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    value: _backgroundPlayback,
+                    onChanged: (value) {
+                      setState(() => _backgroundPlayback = value);
+                      _settingsService.setBackgroundPlayback(value);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 4),
+      child: Text(
+        title,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.primary,
+          fontWeight: FontWeight.bold,
+          fontSize: 13,
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Close'),
-        ),
-      ],
     );
   }
 }
@@ -253,16 +304,17 @@ void showSettingsDialog(
   required Function(bool) onSuperDarkModeChanged,
   required Function(bool) onDynamicColorChanged,
 }) {
-  showDialog(
-    context: context,
-    builder:
-        (context) => SettingsDialog(
-          themeMode: themeMode,
-          superDarkMode: superDarkMode,
-          dynamicColor: dynamicColor,
-          onThemeModeChanged: onThemeModeChanged,
-          onSuperDarkModeChanged: onSuperDarkModeChanged,
-          onDynamicColorChanged: onDynamicColorChanged,
-        ),
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => SettingsPage(
+        themeMode: themeMode,
+        superDarkMode: superDarkMode,
+        dynamicColor: dynamicColor,
+        onThemeModeChanged: onThemeModeChanged,
+        onSuperDarkModeChanged: onSuperDarkModeChanged,
+        onDynamicColorChanged: onDynamicColorChanged,
+      ),
+    ),
   );
 }

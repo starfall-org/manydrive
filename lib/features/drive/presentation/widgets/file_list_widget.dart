@@ -9,6 +9,7 @@ import 'package:manydrive/features/drive/presentation/widgets/file_tile_widget.d
 import 'package:manydrive/features/drive/presentation/widgets/folder_tile_widget.dart';
 import 'package:manydrive/features/drive/presentation/widgets/share_file_dialog.dart';
 import 'package:manydrive/features/drive/presentation/widgets/sort_bottom_sheet.dart';
+import 'package:manydrive/injection_container.dart';
 
 enum SortType { name, date, size }
 
@@ -34,6 +35,18 @@ class FileListWidgetState extends State<FileListWidget>
     with AutomaticKeepAliveClientMixin {
   SortType _sortType = SortType.name;
   bool _sortAscending = true;
+
+
+
+  void _loadSortSettings() {
+    final settings = injector.settingsService;
+    final typeStr = settings.sortType;
+    _sortType = SortType.values.firstWhere(
+      (e) => e.name == typeStr,
+      orElse: () => SortType.name,
+    );
+    _sortAscending = settings.sortAscending;
+  }
   String? _selectedFileId;
   final ScrollController _scrollController = ScrollController();
 
@@ -65,6 +78,7 @@ class FileListWidgetState extends State<FileListWidget>
   @override
   void initState() {
     super.initState();
+    _loadSortSettings();
     _loadInitialData();
     MiniPlayerController().addListener(_onMiniPlayerUpdate);
   }
@@ -321,6 +335,8 @@ class FileListWidgetState extends State<FileListWidget>
                 _sortType = type;
                 _sortAscending = ascending;
               });
+              injector.settingsService.setSortType(type.name);
+              injector.settingsService.setSortAscending(ascending);
             },
           ),
     );

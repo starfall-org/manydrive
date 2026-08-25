@@ -152,31 +152,47 @@ class _GooglePhotosPageState extends State<GooglePhotosPage>
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Google Photos'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(icon: Icon(Icons.photo), text: 'Photos'),
-            Tab(icon: Icon(Icons.photo_album), text: 'Albums'),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              _loadPhotos();
-              _loadAlbums();
-            },
-          ),
-        ],
-      ),
-      body: TabBarView(
-        controller: _tabController,
+      body: Column(
         children: [
-          _buildPhotosTab(),
-          _buildAlbumsTab(),
+          Material(
+            color: colorScheme.surfaceContainerLow,
+            child: Row(
+              children: [
+                Expanded(
+                  child: TabBar(
+                    controller: _tabController,
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal, fontSize: 13),
+                    tabs: const [
+                      Tab(icon: Icon(Icons.photo), text: 'Photos'),
+                      Tab(icon: Icon(Icons.photo_album), text: 'Albums'),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Refresh',
+                  onPressed: () {
+                    _loadPhotos();
+                    _loadAlbums();
+                  },
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildPhotosTab(),
+                _buildAlbumsTab(),
+              ],
+            ),
+          ),
         ],
       ),
       floatingActionButton: FloatingActionButton(

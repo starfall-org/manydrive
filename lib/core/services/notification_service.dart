@@ -68,7 +68,7 @@ class NotificationService {
       channelDescription: 'Media playback controls and progress',
       importance: Importance.low,
       priority: Priority.low,
-      ongoing: isPlaying,
+      ongoing: true,
       autoCancel: false,
       onlyAlertOnce: true,
       showWhen: false,
@@ -76,16 +76,23 @@ class NotificationService {
         const AndroidNotificationAction(
           'media_prev',
           'Previous',
+          icon: DrawableResourceAndroidBitmap('@android:drawable/ic_media_previous'),
           showsUserInterface: true,
         ),
         AndroidNotificationAction(
           isPlaying ? 'media_pause' : 'media_play',
           isPlaying ? 'Pause' : 'Play',
+          icon: DrawableResourceAndroidBitmap(
+            isPlaying
+                ? '@android:drawable/ic_media_pause'
+                : '@android:drawable/ic_media_play',
+          ),
           showsUserInterface: true,
         ),
         const AndroidNotificationAction(
           'media_next',
           'Next',
+          icon: DrawableResourceAndroidBitmap('@android:drawable/ic_media_next'),
           showsUserInterface: true,
         ),
       ],

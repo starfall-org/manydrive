@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
@@ -26,10 +27,12 @@ class MiniPlayerController extends ChangeNotifier {
   AudioPlayer? _audioPlayer;
   AudioPlayer? get audioPlayer => _audioPlayer;
 
+  Uint8List? _audioData;
+  Uint8List? get audioData => _audioData;
+
   String? _title;
   String? get title => _title;
 
-  // Metadata for restoring full screen
   DriveFile? _currentFile;
   DriveFile? get currentFile => _currentFile;
 
@@ -39,8 +42,9 @@ class MiniPlayerController extends ChangeNotifier {
   DriveRepository? _driveRepository;
   DriveRepository? get driveRepository => _driveRepository;
 
-  Function(DriveFile, List<DriveFile>?, DriveRepository)? _onExpand;
-  void setOnExpand(Function(DriveFile, List<DriveFile>?, DriveRepository) onExpand) {
+  Function(DriveFile, List<DriveFile>?, DriveRepository, {AudioPlayer? audioPlayer, Uint8List? audioData, VideoPlayerController? videoController})? _onExpand;
+
+  void setOnExpand(Function(DriveFile, List<DriveFile>?, DriveRepository, {AudioPlayer? audioPlayer, Uint8List? audioData, VideoPlayerController? videoController}) onExpand) {
     _onExpand = onExpand;
   }
 
@@ -61,29 +65,50 @@ class MiniPlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void expand() {
-    if (_onExpand != null && _currentFile != null && _driveRepository != null) {
-      _onExpand!(_currentFile!, _allFiles, _driveRepository!);
-      _isShowing = false;
-      notifyListeners();
-    }
-  }
-
   void showAudio({
     required AudioPlayer player,
     required String title,
+    DriveFile? file,
+    Uint8List? audioData,
+    DriveRepository? driveRepository,
+    List<DriveFile>? allFiles,
   }) {
     _isShowing = true;
     _type = MiniPlayerType.audio;
     _audioPlayer = player;
     _title = title;
+    _currentFile = file;
+    _audioData = audioData;
+    _driveRepository = driveRepository;
+    _allFiles = allFiles;
     notifyListeners();
+  }
+
+  void expand() {
+    if (_onExpand != null && _currentFile != null && _driveRepository != null) {
+      final currentF = _currentFile!;
+      final repo = _driveRepository!;
+      final files = _allFiles;
+      final aPlayer = _audioPlayer;
+      final aData = _audioData;
+      final vCtrl = _videoController;
+
+      _isShowing = false;
+      notifyListeners();
+
+      _onExpand!(
+        currentF,
+        files,
+        repo,
+        audioPlayer: _type == MiniPlayerType.audio ? aPlayer : null,
+        audioData: _type == MiniPlayerType.audio ? aData : null,
+        videoController: _type == MiniPlayerType.video ? vCtrl : null,
+      );
+    }
   }
 
   void hide() {
     _isShowing = false;
-    // We don't dispose controllers here as they might be managed elsewhere
-    // but we can pause them if needed.
     notifyListeners();
   }
 
@@ -96,59 +121,88 @@ class MiniPlayerController extends ChangeNotifier {
     _isShowing = false;
     _videoController = null;
     _audioPlayer = null;
+    _audioData = null;
+    _currentFile = null;
     notifyListeners();
   }
 
+  Future<void> playPrevious() async {
+    if (_allFiles == null || _currentFile == null || _driveRepository == null) return;
+
+    bool filterCondition(DriveFile f) => _type == MiniPlayerType.video ? f.isVideo : f.isAudio;
+    final matchingFiles = _allFiles!.where(filterCondition).toList();
+    if (matchingFiles.isEmpty) return;
+
+    final currentIndex = matchingFiles.indexWhere((f) => f.id == _currentFile!.id);
+    if (currentIndex <= 0) return;
+
+    final prevFile = matchingFiles[currentIndex - 1];
+    await _switchToFile(prevFile);
+  }
+
   Future<void> playNext() async {
-    if (_type != MiniPlayerType.video || _allFiles == null || _currentFile == null || _driveRepository == null) {
-      return;
-    }
+    if (_allFiles == null || _currentFile == null || _driveRepository == null) return;
 
-    final currentIndex = _allFiles!.indexWhere((f) => f.id == _currentFile!.id);
-    if (currentIndex == -1 || currentIndex >= _allFiles!.length - 1) {
-      return;
-    }
+    bool filterCondition(DriveFile f) => _type == MiniPlayerType.video ? f.isVideo : f.isAudio;
+    final matchingFiles = _allFiles!.where(filterCondition).toList();
+    if (matchingFiles.isEmpty) return;
 
-    final nextFile = _allFiles![currentIndex + 1];
-    if (!nextFile.isVideo) return;
+    final currentIndex = matchingFiles.indexWhere((f) => f.id == _currentFile!.id);
+    if (currentIndex == -1 || currentIndex >= matchingFiles.length - 1) return;
 
-    try {
-      // Tạm dừng và dispose video cũ nếu cần
-      final oldController = _videoController;
-      await oldController?.pause();
+    final nextFile = matchingFiles[currentIndex + 1];
+    await _switchToFile(nextFile);
+  }
 
-      _currentFile = nextFile;
-      _title = nextFile.name;
-      _videoController = null; // Để UI hiện loading
-      notifyListeners();
+  Future<void> _switchToFile(DriveFile targetFile) async {
+    if (_type == MiniPlayerType.video) {
+      try {
+        final oldController = _videoController;
+        await oldController?.pause();
 
-      // Khởi tạo video mới
-      final videoData = await _driveRepository!.getFileBytes(nextFile);
-      
-      final cacheKey = nextFile.id.replaceAll('/', '_');
-      final cacheDir = await getTemporaryDirectory();
-      final videoDir = Directory('${cacheDir.path}/video_cache');
-      if (!await videoDir.exists()) {
-        await videoDir.create(recursive: true);
+        _currentFile = targetFile;
+        _title = targetFile.name;
+        _videoController = null;
+        notifyListeners();
+
+        final videoData = await _driveRepository!.getFileBytes(targetFile);
+        final cacheKey = targetFile.id.replaceAll('/', '_');
+        final cacheDir = await getTemporaryDirectory();
+        final videoDir = Directory('${cacheDir.path}/video_cache');
+        if (!await videoDir.exists()) {
+          await videoDir.create(recursive: true);
+        }
+        final file = File('${videoDir.path}/$cacheKey.mp4');
+        if (!await file.exists()) {
+          await file.writeAsBytes(videoData);
+        }
+
+        final newController = VideoPlayerController.file(file);
+        await newController.initialize();
+        await oldController?.dispose();
+
+        _videoController = newController;
+        _videoController!.play();
+        notifyListeners();
+      } catch (e) {
+        debugPrint("Error switching video in mini player: $e");
       }
-      final file = File('${videoDir.path}/$cacheKey.mp4');
-      if (!await file.exists()) {
-        await file.writeAsBytes(videoData);
+    } else if (_type == MiniPlayerType.audio) {
+      try {
+        await _audioPlayer?.stop();
+
+        _currentFile = targetFile;
+        _title = targetFile.name;
+        notifyListeners();
+
+        final bytes = await _driveRepository!.getFileBytes(targetFile);
+        _audioData = bytes;
+        await _audioPlayer?.setSourceBytes(bytes);
+        await _audioPlayer?.resume();
+        notifyListeners();
+      } catch (e) {
+        debugPrint("Error switching audio in mini player: $e");
       }
-
-      final newController = VideoPlayerController.file(file);
-      await newController.initialize();
-      
-      // Dispose old one after new one is ready to keep it smooth if possible
-      // but here we already set _videoController = null
-      await oldController?.dispose();
-
-      _videoController = newController;
-      _videoController!.play();
-      notifyListeners();
-      
-    } catch (e) {
-      debugPrint("Error playing next video in mini player: $e");
     }
   }
 }

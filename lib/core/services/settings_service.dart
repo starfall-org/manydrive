@@ -9,6 +9,9 @@ class SettingsService {
   static const _fileCacheKey = 'enable_file_cache';
   static const _uploadModeKey = 'upload_mode';
   static const _backgroundPlaybackKey = 'background_playback';
+  static const _sortTypeKey = 'sort_type';
+  static const _sortAscendingKey = 'sort_ascending';
+  static const _sidebarHeaderImageKey = 'sidebar_header_image';
 
   late final SharedPreferences _prefs;
 
@@ -71,5 +74,27 @@ class SettingsService {
 
   Future<void> setBackgroundPlayback(bool value) async {
     await _prefs.setBool(_backgroundPlaybackKey, value);
+  }
+
+  String get sortType => _prefs.getString(_sortTypeKey) ?? 'name';
+
+  Future<void> setSortType(String type) async {
+    await _prefs.setString(_sortTypeKey, type);
+  }
+
+  bool get sortAscending => _prefs.getBool(_sortAscendingKey) ?? true;
+
+  Future<void> setSortAscending(bool ascending) async {
+    await _prefs.setBool(_sortAscendingKey, ascending);
+  }
+
+  String? get sidebarHeaderImage => _prefs.getString(_sidebarHeaderImageKey);
+
+  Future<void> setSidebarHeaderImage(String? imagePath) async {
+    if (imagePath == null) {
+      await _prefs.remove(_sidebarHeaderImageKey);
+    } else {
+      await _prefs.setString(_sidebarHeaderImageKey, imagePath);
+    }
   }
 }
