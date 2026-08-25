@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1064411966305",
+    "project_id": "awesome-89e82",
+    "storage_bucket": "awesome-89e82.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1064411966305:android:c46cd9a2abc7914204b320",
+        "android_client_info": {
+          "package_name": "com.starfall.gsadrive"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAphkXBLbeRXdW86m8AuSqNIURA_qk8Xmo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
