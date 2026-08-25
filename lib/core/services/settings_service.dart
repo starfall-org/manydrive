@@ -5,6 +5,10 @@ class SettingsService {
   static const _themeModeKey = 'theme_mode';
   static const _superDarkModeKey = 'super_dark_mode';
   static const _dynamicColorKey = 'dynamic_color';
+  static const _s3PresignedUrlKey = 's3_presigned_url';
+  static const _fileCacheKey = 'enable_file_cache';
+  static const _uploadModeKey = 'upload_mode';
+  static const _backgroundPlaybackKey = 'background_playback';
 
   late final SharedPreferences _prefs;
 
@@ -43,5 +47,29 @@ class SettingsService {
 
   Future<void> setDynamicColor(bool value) async {
     await _prefs.setBool(_dynamicColorKey, value);
+  }
+
+  bool get useS3PresignedUrl => _prefs.getBool(_s3PresignedUrlKey) ?? true;
+
+  Future<void> setUseS3PresignedUrl(bool value) async {
+    await _prefs.setBool(_s3PresignedUrlKey, value);
+  }
+
+  bool get enableFileCache => _prefs.getBool(_fileCacheKey) ?? true;
+
+  Future<void> setEnableFileCache(bool value) async {
+    await _prefs.setBool(_fileCacheKey, value);
+  }
+
+  String get uploadMode => _prefs.getString(_uploadModeKey) ?? 'sequential';
+
+  Future<void> setUploadMode(String mode) async {
+    await _prefs.setString(_uploadModeKey, mode);
+  }
+
+  bool get backgroundPlayback => _prefs.getBool(_backgroundPlaybackKey) ?? true;
+
+  Future<void> setBackgroundPlayback(bool value) async {
+    await _prefs.setBool(_backgroundPlaybackKey, value);
   }
 }

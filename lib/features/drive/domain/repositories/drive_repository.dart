@@ -4,13 +4,18 @@ import 'dart:typed_data';
 import 'package:manydrive/features/drive/domain/entities/drive_file.dart';
 
 /// Abstract repository defining drive operations
-/// Implementation details are in the data layer
 abstract class DriveRepository {
+  /// Whether current active datasource is S3
+  bool get isS3;
+
   /// Check if user is logged in
   bool get isLoggedIn;
 
-  /// Login with service account credentials
+  /// Login with credentials
   Future<void> login(Map<String, dynamic> credentials);
+
+  /// Get S3 presigned URL for media streaming/downloading
+  Future<String?> getPresignedUrl(DriveFile file, {int expires = 3600});
 
   /// List files in a folder or root
   Future<List<DriveFile>> listFiles({

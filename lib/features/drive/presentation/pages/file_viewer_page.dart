@@ -2,11 +2,11 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-
 import 'package:manydrive/features/drive/domain/entities/drive_file.dart';
 import 'package:manydrive/features/drive/domain/repositories/drive_repository.dart';
 import 'package:manydrive/features/drive/presentation/pages/media/audio_player_page.dart';
 import 'package:manydrive/features/drive/presentation/pages/media/video_player_page.dart';
+import 'package:manydrive/injection_container.dart';
 
 /// Handles opening different file types
 class FileViewerPage {
@@ -97,6 +97,21 @@ class FileViewerPage {
   }
 
   void _playAudio() {
+    if (driveRepository.isS3 && injector.settingsService.useS3PresignedUrl) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => AudioPlayerPage(
+            file: file,
+            driveRepository: driveRepository,
+            title: file.name,
+          ),
+        ),
+      );
+
+      return;
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -120,6 +135,8 @@ class FileViewerPage {
                   } else if (snapshot.hasData) {
                     return AudioPlayerPage(
                       audioData: snapshot.data!,
+                      file: file,
+                      driveRepository: driveRepository,
                       title: file.name,
                     );
                   } else {

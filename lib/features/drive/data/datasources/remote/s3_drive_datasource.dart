@@ -32,6 +32,11 @@ class S3DriveDataSource {
     );
   }
 
+  Future<String> getPresignedUrl(String fileId, {int expires = 3600}) async {
+    if (_minio == null || _bucket == null) throw Exception('Not logged in to S3');
+    return await _minio!.presignedGetObject(_bucket!, fileId, expires: expires);
+  }
+
   Future<List<DriveFileModel>> listFiles({
     String? folderId,
     bool sharedWithMe = false,
@@ -49,7 +54,6 @@ class S3DriveDataSource {
     
     final results = <DriveFileModel>[];
     
-    // listObjectsV2 returns a Stream<ListObjectsV2Result>
     final objectsStream = _minio!.listObjectsV2(_bucket!, prefix: prefix, recursive: false);
     
     await for (final result in objectsStream) {
@@ -163,7 +167,6 @@ class S3DriveDataSource {
     final size = await file.length();
     final stream = file.openRead();
 
-    // putObject expects Stream<Uint8List>
     final byteStream = stream.map((event) => Uint8List.fromList(event));
     await _minio!.putObject(_bucket!, key, byteStream, size: size);
   }
@@ -171,7 +174,6 @@ class S3DriveDataSource {
   Future<void> createFolder(String name, {String? parentFolderId}) async {
     if (_minio == null || _bucket == null) throw Exception('Not logged in');
     final key = parentFolderId == null ? '$name/' : '$parentFolderId$name/';
-    // S3 folders are just objects ending with /
     await _minio!.putObject(_bucket!, key, Stream.value(Uint8List(0)), size: 0);
   }
 
@@ -179,7 +181,6 @@ class S3DriveDataSource {
     if (_minio == null || _bucket == null) throw Exception('Not logged in');
     
     if (fileId.endsWith('/')) {
-      // It's a folder, we need to delete all objects with this prefix
       final objectsStream = _minio!.listObjectsV2(_bucket!, prefix: fileId, recursive: true);
       final objectsToDelete = <String>[];
       
@@ -195,13 +196,11 @@ class S3DriveDataSource {
         await _minio!.removeObjects(_bucket!, objectsToDelete);
       }
     } else {
-      // It's a single file
       await _minio!.removeObject(_bucket!, fileId);
     }
   }
 
   Future<void> moveFile(String fileId, String newParentId) async {
-    // S3 move is copy + delete
     await copyFile(fileId, newParentId);
     await deleteFile(fileId);
   }

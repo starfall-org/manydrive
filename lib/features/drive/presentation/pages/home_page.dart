@@ -9,6 +9,7 @@ import 'package:manydrive/features/drive/domain/repositories/drive_repository.da
 import 'package:manydrive/features/drive/presentation/dialogs/login_dialog.dart';
 import 'package:manydrive/features/drive/presentation/pages/file_viewer_page.dart';
 import 'package:manydrive/features/drive/presentation/pages/media/video_player_page.dart';
+import 'package:manydrive/features/drive/presentation/pages/photos/google_photos_page.dart';
 import 'package:manydrive/features/drive/presentation/state/drive_state.dart';
 import 'package:manydrive/features/drive/presentation/state/mini_player_controller.dart';
 import 'package:manydrive/features/drive/presentation/widgets/bottom_bar_widget.dart';
@@ -17,6 +18,7 @@ import 'package:manydrive/features/drive/presentation/widgets/float_buttons_widg
 import 'package:manydrive/features/drive/presentation/widgets/mini_player_widget.dart';
 import 'package:manydrive/features/drive/presentation/widgets/side_menu_widget.dart';
 import 'package:manydrive/features/drive/presentation/widgets/top_bar_widget.dart';
+import 'package:manydrive/features/drive/presentation/widgets/upload_progress_widget.dart';
 import 'package:manydrive/injection_container.dart';
 
 class HomePage extends StatefulWidget {
@@ -105,7 +107,6 @@ class _HomePageState extends State<HomePage> {
       _onItemTapped(0);
     }
 
-    // Auto reload data after login/account switch
     if (mounted) {
       _driveState.listFiles(tabKey: 'home');
       if (!_isS3Account) {
@@ -146,7 +147,6 @@ class _HomePageState extends State<HomePage> {
     String tabKey,
     List<DriveFile> allFiles,
   ) async {
-    // Đóng mini player nếu đang hiển thị trước khi mở file mới
     MiniPlayerController().close();
 
     if (file.isFolder) {
@@ -160,7 +160,6 @@ class _HomePageState extends State<HomePage> {
             allFiles: allFiles,
           ).open();
 
-      // Nếu có file được trả về (từ video player), select và scroll đến file đó
       if (lastViewedFile != null && mounted) {
         final fileListKey =
             tabKey == 'home' ? _homeFileListKey : _sharedFileListKey;
@@ -235,6 +234,12 @@ class _HomePageState extends State<HomePage> {
             return Stack(
               children: [
                 if (child != null) child,
+                const Positioned(
+                  top: 70,
+                  left: 8,
+                  right: 8,
+                  child: UploadProgressWidget(),
+                ),
                 MiniPlayerWidget(controller: MiniPlayerController()),
               ],
             );
@@ -267,19 +272,27 @@ class _HomePageState extends State<HomePage> {
                     onOpenTrash: () => _openTrashPage(context),
                   ),
                   appBar: TopBarWidget(
-                    screen: _selectedIndex == 0 ? 'Home' : 'Shared with me',
+                    screen: _selectedIndex == 0
+                        ? 'Home'
+                        : _selectedIndex == 1
+                            ? 'Shared with me'
+                            : 'Google Photos',
                     onSortPressed: () {
                       if (_selectedIndex == 0) {
                         _homeFileListKey.currentState?.showSortMenu();
-                      } else {
+                      } else if (_selectedIndex == 1) {
                         _sharedFileListKey.currentState?.showSortMenu();
                       }
                     },
                     onReloadPressed: () {
-                      _driveState.refresh(currentTabKey);
+                      if (_selectedIndex < 2) {
+                        _driveState.refresh(currentTabKey);
+                      }
                     },
                     onBackPressed:
-                        hasHistory ? () => _driveState.goBack(currentTabKey) : null,
+                        hasHistory && _selectedIndex < 2
+                            ? () => _driveState.goBack(currentTabKey)
+                            : null,
                   ),
                   body: _isS3Account
                       ? FileListWidget(
@@ -312,6 +325,7 @@ class _HomePageState extends State<HomePage> {
                               tabKey: 'shared',
                               isSharedWithMe: true,
                             ),
+                            const GooglePhotosPage(),
                           ],
                         ),
                   bottomNavigationBar: _isS3Account
@@ -320,10 +334,12 @@ class _HomePageState extends State<HomePage> {
                           selectedIndex: _selectedIndex,
                           onItemTapped: _onItemTapped,
                         ),
-                  floatingActionButton: FloatButtonsWidget(
-                    driveState: _driveState,
-                    tabKey: _selectedIndex == 0 ? 'home' : 'shared',
-                  ),
+                  floatingActionButton: _selectedIndex == 2
+                      ? null
+                      : FloatButtonsWidget(
+                          driveState: _driveState,
+                          tabKey: _selectedIndex == 0 ? 'home' : 'shared',
+                        ),
                 );
               },
             ),
