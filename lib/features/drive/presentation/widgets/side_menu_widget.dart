@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:manydrive/core/utils/constants.dart';
 import 'package:manydrive/features/drive/domain/entities/credential.dart';
 import 'package:manydrive/features/drive/domain/repositories/credential_repository.dart';
 import 'package:manydrive/features/drive/presentation/dialogs/about_dialog.dart';
@@ -38,35 +40,41 @@ class SideMenuWidget extends StatefulWidget {
 }
 
 class _SideMenuWidgetState extends State<SideMenuWidget> {
-  String? selectedClientEmail;
   List<Credential> credentials = [];
+  String? selectedClientEmail;
   String? _customHeaderImagePath;
 
   @override
   void initState() {
     super.initState();
     _loadCredentials();
-    _loadHeaderImage();
+    _loadCustomHeaderImage();
   }
 
-  Future<void> _loadHeaderImage() async {
-    final imagePath = injector.settingsService.sidebarHeaderImage;
-    setState(() {
-      _customHeaderImagePath = imagePath;
-    });
+  Future<void> _loadCustomHeaderImage() async {
+    final path = await injector.settingsService.getSidebarHeaderImage();
+    if (mounted) {
+      setState(() {
+        _customHeaderImagePath = path;
+      });
+    }
   }
 
   Future<void> _loadCredentials() async {
-    selectedClientEmail = await widget.credentialRepository.getSelectedEmail();
-    final credList = await widget.credentialRepository.listCredentials();
-    setState(() {
-      credentials = credList;
-    });
+    final list = await widget.credentialRepository.listCredentials();
+    final selected = await widget.credentialRepository.getSelectedEmail();
+
+    if (mounted) {
+      setState(() {
+        credentials = list;
+        selectedClientEmail = selected;
+      });
+    }
   }
 
-  void _addAccount(String identifier) async {
+  void _switchAccount(String identifier) async {
     await widget.credentialRepository.setSelectedEmail(identifier);
-    await _loadCredentials();
+    widget.onLogin(identifier);
     setState(() {
       selectedClientEmail = identifier;
     });
@@ -96,6 +104,12 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
     );
 
     if (confirmed == true) {
+      try {
+        final googleSignIn = GoogleSignIn(scopes: kGoogleSignInScopes);
+        await googleSignIn.signOut();
+        await googleSignIn.disconnect();
+      } catch (_) {}
+
       await widget.credentialRepository.deleteCredential(identifier);
       final newSelected = await widget.credentialRepository.getSelectedEmail();
       await _loadCredentials();
@@ -152,22 +166,28 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) {
-        return SafeArea(
+      builder: (context) {
+        final colorScheme = Theme.of(context).colorScheme;
+
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Icon(Icons.manage_accounts_rounded),
-                    const SizedBox(width: 10),
                     Text(
-                      'Danh sách tài khoản',
+                      'Chọn tài khoản',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
                     ),
                   ],
                 ),
@@ -178,62 +198,55 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
                   shrinkWrap: true,
                   itemCount: uniqueIdentifiers.length,
                   itemBuilder: (context, index) {
-                    final id = uniqueIdentifiers[index];
+                    final identifier = uniqueIdentifiers[index];
+                    final isSelected = identifier == selectedClientEmail;
                     final cred = credentials.firstWhere(
-                      (c) => (c.clientEmail ?? c.s3Endpoint) == id,
+                      (c) => (c.clientEmail ?? c.s3Endpoint) == identifier,
                     );
-                    final isSelected = id == selectedClientEmail;
-
-                    IconData accountIcon = Icons.account_circle;
-                    if (cred.isS3) {
-                      accountIcon = Icons.cloud_queue;
-                    } else if (cred.isServiceAccount) {
-                      accountIcon = Icons.key_outlined;
-                    }
 
                     return ListTile(
                       leading: CircleAvatar(
-                        backgroundColor: isSelected
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.surfaceContainerHighest,
-                        foregroundColor: isSelected
-                            ? Theme.of(context).colorScheme.onPrimary
-                            : Theme.of(context).colorScheme.onSurfaceVariant,
-                        backgroundImage: cred.avatarUrl != null && cred.avatarUrl!.isNotEmpty
-                            ? CachedNetworkImageProvider(cred.avatarUrl!)
-                            : null,
-                        child: cred.avatarUrl == null || cred.avatarUrl!.isEmpty
-                            ? Icon(accountIcon, size: 20)
-                            : null,
+                        backgroundColor:
+                            isSelected
+                                ? colorScheme.primaryContainer
+                                : colorScheme.surfaceContainerHighest,
+                        backgroundImage:
+                            cred.photoUrl != null
+                                ? CachedNetworkImageProvider(cred.photoUrl!)
+                                : null,
+                        child:
+                            cred.photoUrl == null
+                                ? Icon(
+                                  cred.isS3
+                                      ? Icons.cloud
+                                      : cred.isServiceAccount
+                                      ? Icons.key
+                                      : Icons.person,
+                                  color:
+                                      isSelected
+                                          ? colorScheme.onPrimaryContainer
+                                          : colorScheme.onSurfaceVariant,
+                                )
+                                : null,
                       ),
                       title: Text(
-                        cred.username,
+                        cred.displayName ?? identifier,
                         style: TextStyle(
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          fontWeight:
+                              isSelected ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
-                      subtitle: Text(
-                        id,
-                        style: const TextStyle(fontSize: 12),
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      subtitle: cred.displayName != null ? Text(identifier) : null,
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (isSelected)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 4),
-                              child: Icon(
-                                Icons.check_circle_rounded,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                            ),
+                            Icon(Icons.check_circle, color: colorScheme.primary),
                           IconButton(
-                            icon: const Icon(Icons.logout_rounded, color: Colors.redAccent, size: 20),
-                            tooltip: 'Đăng xuất',
+                            icon: const Icon(Icons.delete_outline, color: Colors.red),
                             onPressed: () {
                               Navigator.pop(context);
-                              _deleteAccount(id);
+                              _deleteAccount(identifier);
                             },
                           ),
                         ],
@@ -241,11 +254,7 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
                       onTap: () {
                         Navigator.pop(context);
                         if (!isSelected) {
-                          setState(() {
-                            selectedClientEmail = id;
-                          });
-                          widget.credentialRepository.setSelectedEmail(id);
-                          widget.onLogin(id);
+                          _switchAccount(identifier);
                         }
                       },
                     );
@@ -254,23 +263,17 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
               ),
               const Divider(),
               ListTile(
-                leading: Icon(Icons.add_circle_outline, color: Theme.of(context).colorScheme.primary),
-                title: Text(
-                  'Thêm tài khoản mới',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                leading: const Icon(Icons.add_circle_outline),
+                title: const Text('Thêm tài khoản mới'),
                 onTap: () {
                   Navigator.pop(context);
-                  showLoginDialog(context, widget.credentialRepository, (identifier) {
-                    _addAccount(identifier);
-                    widget.onLogin(identifier);
-                  });
+                  showLoginDialog(
+                    context,
+                    widget.credentialRepository,
+                    widget.onLogin,
+                  );
                 },
               ),
-              const SizedBox(height: 8),
             ],
           ),
         );
@@ -280,166 +283,193 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final uniqueIdentifiers =
-        credentials
-            .map((c) => c.clientEmail ?? c.s3Endpoint ?? 'unknown')
-            .toSet()
-            .toList();
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
-    if (!uniqueIdentifiers.contains(selectedClientEmail) &&
-        uniqueIdentifiers.isNotEmpty) {
-      selectedClientEmail = uniqueIdentifiers.first;
-    }
-
-    final currentCred = credentials.firstWhere(
-      (c) => (c.clientEmail ?? c.s3Endpoint) == selectedClientEmail,
-      orElse: () => const Credential(rawData: {}),
+    final currentCred = credentials.cast<Credential?>().firstWhere(
+      (c) => (c?.clientEmail ?? c?.s3Endpoint) == selectedClientEmail,
+      orElse: () => null,
     );
 
     return Drawer(
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.horizontal(right: Radius.circular(24)),
-      ),
       child: Column(
         children: [
-          Stack(
-            children: [
-              UserAccountsDrawerHeader(
-                margin: EdgeInsets.zero,
-                accountName: const Text(
-                  "ManyDrive",
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                ),
-                accountEmail: InkWell(
-                  onTap: _showAccountSelectionModal,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            selectedClientEmail ?? "Chưa chọn tài khoản",
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.arrow_drop_down, color: Colors.white, size: 20),
-                      ],
-                    ),
-                  ),
-                ),
-                currentAccountPicture: CircleAvatar(
-                  backgroundColor: Colors.white.withValues(alpha: 0.9),
-                  backgroundImage: currentCred.avatarUrl != null && currentCred.avatarUrl!.isNotEmpty
-                      ? CachedNetworkImageProvider(currentCred.avatarUrl!)
-                      : null,
-                  child: currentCred.avatarUrl == null || currentCred.avatarUrl!.isEmpty
-                      ? Icon(
-                          currentCred.isS3
-                              ? Icons.cloud_outlined
-                              : currentCred.isServiceAccount
-                              ? Icons.key
-                              : Icons.account_circle,
-                          size: 36,
-                          color: Theme.of(context).colorScheme.primary,
-                        )
-                      : null,
-                ),
-                decoration: BoxDecoration(
-                  image: DecorationImage(
-                    image: _getHeaderImage(),
-                    fit: BoxFit.cover,
-                  ),
+          UserAccountsDrawerHeader(
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: _getHeaderImage(),
+                fit: BoxFit.cover,
+                colorFilter: ColorFilter.mode(
+                  Colors.black.withValues(alpha: 0.4),
+                  BlendMode.darken,
                 ),
               ),
-              Positioned(
-                top: 36,
-                right: 8,
-                child: PopupMenuButton<String>(
-                  icon: Container(
-                    padding: const EdgeInsets.all(4),
+            ),
+            currentAccountPicture: Stack(
+              children: [
+                CircleAvatar(
+                  radius: 36,
+                  backgroundColor: colorScheme.primaryContainer,
+                  backgroundImage:
+                      currentCred?.photoUrl != null
+                          ? CachedNetworkImageProvider(currentCred!.photoUrl!)
+                          : null,
+                  child:
+                      currentCred?.photoUrl == null
+                          ? Icon(
+                            currentCred?.isS3 == true
+                                ? Icons.cloud
+                                : currentCred?.isServiceAccount == true
+                                ? Icons.key
+                                : Icons.person,
+                            size: 36,
+                            color: colorScheme.onPrimaryContainer,
+                          )
+                          : null,
+                ),
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.4),
+                      color: colorScheme.surface,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.photo_camera_outlined, color: Colors.white, size: 18),
-                  ),
-                  tooltip: 'Đổi ảnh bìa',
-                  onSelected: (val) {
-                    if (val == 'pick') {
-                      _pickHeaderImage();
-                    } else if (val == 'reset') {
-                      _resetHeaderImage();
-                    }
-                  },
-                  itemBuilder: (ctx) => [
-                    const PopupMenuItem(
-                      value: 'pick',
-                      child: Row(
-                        children: [
-                          Icon(Icons.image, size: 18),
-                          SizedBox(width: 8),
-                          Text('Chọn ảnh bìa từ máy'),
-                        ],
-                      ),
+                    child: IconButton(
+                      icon: const Icon(Icons.camera_alt, size: 16),
+                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(4),
+                      onPressed: _showCoverOptions,
                     ),
-                    if (_customHeaderImagePath != null)
-                      const PopupMenuItem(
-                        value: 'reset',
-                        child: Row(
-                          children: [
-                            Icon(Icons.restore, size: 18, color: Colors.redAccent),
-                            SizedBox(width: 8),
-                            Text('Khôi phục ảnh mặc định', style: TextStyle(color: Colors.redAccent)),
-                          ],
-                        ),
-                      ),
-                  ],
+                  ),
                 ),
+              ],
+            ),
+            accountName: Text(
+              currentCred?.displayName ??
+                  (selectedClientEmail != null
+                      ? selectedClientEmail!.split('@').first
+                      : 'ManyDrive'),
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: Colors.white,
               ),
-            ],
+            ),
+            accountEmail: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    selectedClientEmail ?? 'Chưa đăng nhập',
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const Icon(Icons.arrow_drop_down, color: Colors.white70),
+              ],
+            ),
+            onDetailsPressed: _showAccountSelectionModal,
           ),
           ListTile(
-            leading: const Icon(Icons.delete_outline),
-            title: const Text("Thùng rác (Trash)"),
+            leading: const Icon(Icons.switch_account),
+            title: const Text('Chuyển tài khoản'),
+            subtitle: Text(
+              'Đang dùng: ${selectedClientEmail ?? "Chưa chọn"}',
+              style: const TextStyle(fontSize: 12),
+            ),
+            onTap: _showAccountSelectionModal,
+          ),
+          ListTile(
+            leading: const Icon(Icons.add_circle_outline),
+            title: const Text('Thêm tài khoản mới'),
             onTap: () {
               Navigator.pop(context);
-              widget.onOpenTrash?.call();
+              showLoginDialog(
+                context,
+                widget.credentialRepository,
+                widget.onLogin,
+              );
             },
           ),
+          if (widget.onOpenTrash != null)
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('Thùng rác'),
+              onTap: () {
+                Navigator.pop(context);
+                widget.onOpenTrash!();
+              },
+            ),
+          const Divider(),
           ListTile(
             leading: const Icon(Icons.settings_outlined),
-            title: const Text("Cài đặt"),
+            title: const Text('Cài đặt'),
             onTap: () {
               Navigator.pop(context);
               showSettingsDialog(
                 context,
                 themeMode: widget.themeMode,
-                superDarkMode: widget.isSuperDarkMode,
-                dynamicColor: widget.isDynamicColor,
                 onThemeModeChanged: widget.onThemeModeChanged,
+                isSuperDarkMode: widget.isSuperDarkMode,
                 onSuperDarkModeChanged: widget.onSuperDarkModeChanged,
+                isDynamicColor: widget.isDynamicColor,
                 onDynamicColorChanged: widget.onDynamicColorChanged,
               );
             },
           ),
           ListTile(
             leading: const Icon(Icons.info_outline),
-            title: const Text("Giới thiệu"),
+            title: const Text('Giới thiệu'),
             onTap: () {
               Navigator.pop(context);
               showAboutAppDialog(context);
             },
           ),
+          const Spacer(),
+          const Divider(),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              'ManyDrive v1.0.0',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.outline,
+              ),
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  void _showCoverOptions() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Chọn ảnh bìa từ thư viện'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickHeaderImage();
+                },
+              ),
+              if (_customHeaderImagePath != null)
+                ListTile(
+                  leading: const Icon(Icons.restore, color: Colors.red),
+                  title: const Text('Khôi phục ảnh mặc định', style: TextStyle(color: Colors.red)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _resetHeaderImage();
+                  },
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

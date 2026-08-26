@@ -172,6 +172,7 @@ class _HomePageState extends State<HomePage> {
       _driveState.listFiles(tabKey: 'home');
       if (!_isS3Account) {
         _driveState.listFiles(sharedWithMe: true, tabKey: 'shared');
+        _photosPageKey.currentState?.clearAndReload();
       }
     }
   }

@@ -2,7 +2,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:manydrive/core/utils/snackbar.dart';
-import 'package:manydrive/features/drive/data/datasources/remote/google_photos_datasource.dart';
 import 'package:manydrive/features/drive/domain/repositories/google_photos_repository.dart';
 import 'package:manydrive/features/drive/presentation/pages/photos/album_detail_page.dart';
 import 'package:manydrive/features/drive/presentation/pages/photos/photo_viewer_page.dart';
@@ -27,6 +26,19 @@ class GooglePhotosPageState extends State<GooglePhotosPage>
   bool _isLoadingAlbums = true;
   String? _itemsError;
   String? _albumsError;
+
+  void clearAndReload() {
+    setState(() {
+      _mediaItems = [];
+      _albums = [];
+      _isLoadingItems = true;
+      _isLoadingAlbums = true;
+      _itemsError = null;
+      _albumsError = null;
+    });
+    _loadPhotos();
+    _loadAlbums();
+  }
 
   void refresh() {
     _loadPhotos();
