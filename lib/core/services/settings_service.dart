@@ -12,6 +12,7 @@ class SettingsService {
   static const _sortTypeKey = 'sort_type';
   static const _sortAscendingKey = 'sort_ascending';
   static const _sidebarHeaderImageKey = 'sidebar_header_image';
+  static const _enableNotificationsKey = 'enable_notifications';
 
   late final SharedPreferences _prefs;
 
@@ -86,6 +87,12 @@ class SettingsService {
 
   Future<void> setSortAscending(bool ascending) async {
     await _prefs.setBool(_sortAscendingKey, ascending);
+  }
+
+  bool get enableNotifications => _prefs.getBool(_enableNotificationsKey) ?? true;
+
+  Future<void> setEnableNotifications(bool value) async {
+    await _prefs.setBool(_enableNotificationsKey, value);
   }
 
   String? get sidebarHeaderImage => _prefs.getString(_sidebarHeaderImageKey);

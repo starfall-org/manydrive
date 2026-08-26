@@ -36,6 +36,38 @@ class DriveFile {
 
   int get sizeInBytes => int.tryParse(size ?? '0') ?? 0;
 
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'mimeType': mimeType,
+      'size': size,
+      'createdTime': createdTime?.toIso8601String(),
+      'modifiedTime': modifiedTime?.toIso8601String(),
+      'thumbnailLink': thumbnailLink,
+      'iconLink': iconLink,
+      'webContentLink': webContentLink,
+      'webViewLink': webViewLink,
+      'description': description,
+    };
+  }
+
+  factory DriveFile.fromJson(Map<String, dynamic> json) {
+    return DriveFile(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      mimeType: json['mimeType'] as String?,
+      size: json['size'] as String?,
+      createdTime: json['createdTime'] != null ? DateTime.tryParse(json['createdTime']) : null,
+      modifiedTime: json['modifiedTime'] != null ? DateTime.tryParse(json['modifiedTime']) : null,
+      thumbnailLink: json['thumbnailLink'] as String?,
+      iconLink: json['iconLink'] as String?,
+      webContentLink: json['webContentLink'] as String?,
+      webViewLink: json['webViewLink'] as String?,
+      description: json['description'] as String?,
+    );
+  }
+
   DriveFile copyWith({
     String? id,
     String? name,

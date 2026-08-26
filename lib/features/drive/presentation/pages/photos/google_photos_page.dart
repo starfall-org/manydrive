@@ -12,10 +12,10 @@ class GooglePhotosPage extends StatefulWidget {
   const GooglePhotosPage({super.key});
 
   @override
-  State<GooglePhotosPage> createState() => _GooglePhotosPageState();
+  State<GooglePhotosPage> createState() => GooglePhotosPageState();
 }
 
-class _GooglePhotosPageState extends State<GooglePhotosPage>
+class GooglePhotosPageState extends State<GooglePhotosPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final GooglePhotosRepository _photosRepository = injector.googlePhotosRepository;
@@ -27,6 +27,11 @@ class _GooglePhotosPageState extends State<GooglePhotosPage>
   bool _isLoadingAlbums = true;
   String? _itemsError;
   String? _albumsError;
+
+  void refresh() {
+    _loadPhotos();
+    _loadAlbums();
+  }
 
   @override
   void initState() {
@@ -172,15 +177,7 @@ class _GooglePhotosPageState extends State<GooglePhotosPage>
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.refresh),
-                  tooltip: 'Refresh',
-                  onPressed: () {
-                    _loadPhotos();
-                    _loadAlbums();
-                  },
-                ),
-                const SizedBox(width: 8),
+
               ],
             ),
           ),

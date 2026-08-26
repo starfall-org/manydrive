@@ -25,25 +25,7 @@ class GoogleDriveDataSource {
 
     if (credentials['auth_type'] == 'oauth' || credentials.containsKey('access_token')) {
       final accessToken = credentials['access_token'] as String?;
-      final refreshToken = credentials['refresh_token'] as String?;
-      final expiryString = credentials['expiry'] as String?;
-      final expiry = expiryString != null
-          ? DateTime.tryParse(expiryString)?.toUtc()
-          : DateTime.now().add(const Duration(hours: 1)).toUtc();
-
-      final token = AccessToken(
-        'Bearer',
-        accessToken ?? '',
-        expiry ?? DateTime.now().add(const Duration(hours: 1)).toUtc(),
-      );
-
-      final accessCredentials = AccessCredentials(
-        token,
-        refreshToken,
-        scopes,
-      );
-
-      final client = authenticatedClient(http.Client(), accessCredentials);
+      final client = _BearerAuthClient(accessToken ?? '');
       _authClient = client;
       _driveApi = drive.DriveApi(client);
     } else {
@@ -72,10 +54,13 @@ class GoogleDriveDataSource {
 
     if (folderId == null && !sharedWithMe && !trashed) {
       conditions.add("'root' in parents");
+      conditions.add("trashed = false");
     } else if (folderId != null) {
       conditions.add("'$folderId' in parents");
+      conditions.add("trashed = false");
     } else if (sharedWithMe) {
       conditions.add("sharedWithMe = true");
+      conditions.add("trashed = false");
     } else {
       conditions.add("trashed = true");
     }
@@ -261,5 +246,21 @@ class GoogleDriveDataSource {
       fileId,
       sendNotificationEmail: true,
     );
+  }
+}
+
+
+class _BearerAuthClient extends http.BaseClient {
+  final String accessToken;
+  final http.Client _inner = http.Client();
+
+  _BearerAuthClient(this.accessToken);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    if (accessToken.isNotEmpty) {
+      request.headers['Authorization'] = 'Bearer $accessToken';
+    }
+    return _inner.send(request);
   }
 }

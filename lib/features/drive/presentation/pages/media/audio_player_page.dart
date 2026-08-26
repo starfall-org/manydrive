@@ -58,6 +58,12 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
       if (mounted) setState(() => _position = p);
     });
 
+    _audioPlayer.onPlayerComplete.listen((_) {
+      if (mounted) {
+        MiniPlayerController().playNext();
+      }
+    });
+
     _audioPlayer.onPlayerStateChanged.listen((state) {
       if (mounted) {
         final playing = state == PlayerState.playing;
@@ -93,6 +99,13 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
         if (mounted) setState(() => _isLoading = false);
       }
     }
+  }
+
+  void _stopAndClose() {
+    MiniPlayerController().close();
+    _audioPlayer.stop();
+    NotificationService().cancel(9992);
+    Navigator.of(context).pop();
   }
 
   String _formatDuration(Duration d) {
@@ -134,7 +147,15 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
           leading: IconButton(
             icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 30),
             onPressed: () => Navigator.of(context).pop(),
+            tooltip: 'Thu nhỏ',
           ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.close_rounded, color: Colors.white, size: 26),
+              tooltip: 'Đóng hoàn toàn',
+              onPressed: _stopAndClose,
+            ),
+          ],
           title: const Text('Playing Audio', style: TextStyle(color: Colors.white, fontSize: 16)),
           centerTitle: true,
         ),

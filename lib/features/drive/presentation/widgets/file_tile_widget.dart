@@ -67,7 +67,7 @@ class FileTile extends StatelessWidget {
       duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         color:
             isPlaying
                 ? Theme.of(

@@ -1,5 +1,5 @@
 import 'dart:io';
-
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:manydrive/features/drive/domain/entities/credential.dart';
@@ -199,7 +199,12 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
                         foregroundColor: isSelected
                             ? Theme.of(context).colorScheme.onPrimary
                             : Theme.of(context).colorScheme.onSurfaceVariant,
-                        child: Icon(accountIcon, size: 20),
+                        backgroundImage: cred.avatarUrl != null && cred.avatarUrl!.isNotEmpty
+                            ? CachedNetworkImageProvider(cred.avatarUrl!)
+                            : null,
+                        child: cred.avatarUrl == null || cred.avatarUrl!.isEmpty
+                            ? Icon(accountIcon, size: 20)
+                            : null,
                       ),
                       title: Text(
                         cred.username,
@@ -216,18 +221,21 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (isSelected)
-                            Icon(
-                              Icons.check_circle_rounded,
-                              color: Theme.of(context).colorScheme.primary,
+                            Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: Icon(
+                                Icons.check_circle_rounded,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
                             ),
-                          if (uniqueIdentifiers.length > 1)
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                              onPressed: () {
-                                Navigator.pop(context);
-                                _deleteAccount(id);
-                              },
-                            ),
+                          IconButton(
+                            icon: const Icon(Icons.logout_rounded, color: Colors.redAccent, size: 20),
+                            tooltip: 'Đăng xuất',
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _deleteAccount(id);
+                            },
+                          ),
                         ],
                       ),
                       onTap: () {
@@ -289,6 +297,9 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
     );
 
     return Drawer(
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.horizontal(right: Radius.circular(24)),
+      ),
       child: Column(
         children: [
           Stack(
@@ -326,15 +337,20 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
                 ),
                 currentAccountPicture: CircleAvatar(
                   backgroundColor: Colors.white.withValues(alpha: 0.9),
-                  child: Icon(
-                    currentCred.isS3
-                        ? Icons.cloud_outlined
-                        : currentCred.isServiceAccount
-                        ? Icons.key
-                        : Icons.account_circle,
-                    size: 36,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
+                  backgroundImage: currentCred.avatarUrl != null && currentCred.avatarUrl!.isNotEmpty
+                      ? CachedNetworkImageProvider(currentCred.avatarUrl!)
+                      : null,
+                  child: currentCred.avatarUrl == null || currentCred.avatarUrl!.isEmpty
+                      ? Icon(
+                          currentCred.isS3
+                              ? Icons.cloud_outlined
+                              : currentCred.isServiceAccount
+                              ? Icons.key
+                              : Icons.account_circle,
+                          size: 36,
+                          color: Theme.of(context).colorScheme.primary,
+                        )
+                      : null,
                 ),
                 decoration: BoxDecoration(
                   image: DecorationImage(

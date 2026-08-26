@@ -72,6 +72,8 @@ class NotificationService {
       autoCancel: false,
       onlyAlertOnce: true,
       showWhen: false,
+      category: AndroidNotificationCategory.transport,
+      styleInformation: const MediaStyleInformation(),
       actions: <AndroidNotificationAction>[
         const AndroidNotificationAction(
           'media_prev',

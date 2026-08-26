@@ -24,9 +24,15 @@ class Credential {
   bool get isOAuth => rawData['auth_type'] == 'oauth';
   bool get isServiceAccount => !isS3 && !isOAuth;
 
+  String? get avatarUrl => rawData['photo_url'] ?? rawData['avatar_url'] ?? rawData['photoUrl'];
+  String? get displayName => rawData['display_name'] ?? rawData['displayName'];
+
   String get username {
     if (isS3) {
       return s3Bucket ?? 'S3 Bucket';
+    }
+    if (displayName != null && displayName!.isNotEmpty) {
+      return displayName!;
     }
     return clientEmail?.split('@').first ?? 'Unknown';
   }
