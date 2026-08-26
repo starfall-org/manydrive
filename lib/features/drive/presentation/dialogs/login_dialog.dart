@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:manydrive/core/utils/constants.dart';
 import 'package:manydrive/core/widgets/app_error_dialog.dart';
-import 'package:manydrive/core/widgets/app_error_widget.dart';
 import 'package:manydrive/features/drive/domain/repositories/credential_repository.dart';
 
 void showLoginDialog(

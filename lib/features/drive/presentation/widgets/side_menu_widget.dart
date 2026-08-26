@@ -52,7 +52,7 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
   }
 
   Future<void> _loadCustomHeaderImage() async {
-    final path = await injector.settingsService.getSidebarHeaderImage();
+    final path = injector.settingsService.sidebarHeaderImage;
     if (mounted) {
       setState(() {
         _customHeaderImagePath = path;
@@ -211,11 +211,11 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
                                 ? colorScheme.primaryContainer
                                 : colorScheme.surfaceContainerHighest,
                         backgroundImage:
-                            cred.photoUrl != null
-                                ? CachedNetworkImageProvider(cred.photoUrl!)
+                            cred.avatarUrl != null
+                                ? CachedNetworkImageProvider(cred.avatarUrl!)
                                 : null,
                         child:
-                            cred.photoUrl == null
+                            cred.avatarUrl == null
                                 ? Icon(
                                   cred.isS3
                                       ? Icons.cloud
@@ -311,11 +311,11 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
                   radius: 36,
                   backgroundColor: colorScheme.primaryContainer,
                   backgroundImage:
-                      currentCred?.photoUrl != null
-                          ? CachedNetworkImageProvider(currentCred!.photoUrl!)
+                      currentCred?.avatarUrl != null
+                          ? CachedNetworkImageProvider(currentCred!.avatarUrl!)
                           : null,
                   child:
-                      currentCred?.photoUrl == null
+                      currentCred?.avatarUrl == null
                           ? Icon(
                             currentCred?.isS3 == true
                                 ? Icons.cloud
@@ -410,9 +410,9 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
                 context,
                 themeMode: widget.themeMode,
                 onThemeModeChanged: widget.onThemeModeChanged,
-                isSuperDarkMode: widget.isSuperDarkMode,
+                superDarkMode: widget.isSuperDarkMode,
                 onSuperDarkModeChanged: widget.onSuperDarkModeChanged,
-                isDynamicColor: widget.isDynamicColor,
+                dynamicColor: widget.isDynamicColor,
                 onDynamicColorChanged: widget.onDynamicColorChanged,
               );
             },
