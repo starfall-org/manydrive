@@ -92,6 +92,19 @@ class _LoginDialogState extends State<_LoginDialog>
 
       final account = await googleSignIn.signIn();
       if (account != null) {
+        try {
+          final bool hasPhotosScope = await googleSignIn.canAccessScopes([
+            'https://www.googleapis.com/auth/photoslibrary.readonly',
+            'https://www.googleapis.com/auth/photoslibrary',
+          ]);
+          if (!hasPhotosScope) {
+            await googleSignIn.requestScopes([
+              'https://www.googleapis.com/auth/photoslibrary.readonly',
+              'https://www.googleapis.com/auth/photoslibrary',
+            ]);
+          }
+        } catch (_) {}
+
         final auth = await account.authentication;
         try {
           final AuthCredential credential = GoogleAuthProvider.credential(
