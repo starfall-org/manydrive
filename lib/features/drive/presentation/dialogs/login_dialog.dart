@@ -4,7 +4,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:manydrive/core/widgets/app_error_widget.dart';
+import 'package:manydrive/core/utils/constants.dart';
+import 'package:manydrive/core/widgets/app_error_dialog.dart';
 import 'package:manydrive/features/drive/domain/repositories/credential_repository.dart';
 
 void showLoginDialog(
@@ -76,19 +77,11 @@ class _LoginDialogState extends State<_LoginDialog>
   Future<void> _handleGoogleNativeSignIn() async {
     try {
       final googleSignIn = GoogleSignIn(
-        scopes: [
-          'https://www.googleapis.com/auth/drive',
-          'https://www.googleapis.com/auth/drive.file',
-          'https://www.googleapis.com/auth/drive.readonly',
-          'https://www.googleapis.com/auth/photoslibrary.readonly',
-          'https://www.googleapis.com/auth/photoslibrary',
-        ],
+        scopes: kGoogleSignInScopes,
       );
 
-      // Disconnect/signOut active GoogleSignIn session so account picker always displays on button press
-      if (await googleSignIn.isSignedIn()) {
-        await googleSignIn.signOut();
-      }
+      // Ép hiện Google Account Picker kể cả khi đã sign in trước đó bằng cách gọi signOut()
+      await googleSignIn.signOut();
 
       final account = await googleSignIn.signIn();
       if (account != null) {
@@ -175,7 +168,7 @@ class _LoginDialogState extends State<_LoginDialog>
       } else {
         _showErrorDialog(
           context,
-          'File JSON không hợp lệ hoặc không chứa "client_email".',
+          'File JSON không hợp lệ hoặc thiếu thuộc tính "client_email".',
         );
       }
     } else if (_selectedTabIndex == 2) {
@@ -200,12 +193,12 @@ class _LoginDialogState extends State<_LoginDialog>
         'secret_key': secretKey,
         'bucket': bucket,
         'region': region.isEmpty ? 'us-east-1' : region,
-        'client_email': 'S3 ()',
       };
 
       try {
-        widget.credentialRepository.saveCredential(jsonEncode(s3Data));
-        widget.onLogin('S3 ()');
+        final jsonString = jsonEncode(s3Data);
+        widget.credentialRepository.saveCredential(jsonString);
+        widget.onLogin(endpoint);
         Navigator.of(context).pop();
       } catch (e) {
         _showErrorDialog(context, e.toString());
@@ -497,15 +490,9 @@ class _LoginDialogState extends State<_LoginDialog>
 }
 
 void _showErrorDialog(BuildContext context, String message) {
-  showDialog(
-    context: context,
-    builder:
-        (context) => Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: AppErrorWidget(
-            title: 'Thông báo lỗi',
-            errorMessage: message,
-          ),
-        ),
+  showAppErrorDialog(
+    context,
+    title: 'Thông báo lỗi',
+    errorMessage: message,
   );
 }

@@ -45,16 +45,20 @@ class DriveState {
 
   /// Login with a credential email
   Future<void> login(String clientEmail) async {
+    // Clear state & cached data immediately on account switch
+    _cachedFiles.clear();
+    for (final controller in _filesControllers.values) {
+      controller.add([]);
+    }
+    for (final key in _pathHistories.keys) {
+      _pathHistories[key] = [];
+    }
+
     final credential = await _credentialRepository.getCredential(clientEmail);
     if (credential == null) {
       throw Exception('Credential not found for $clientEmail');
     }
     await _driveRepository.login(credential.rawData);
-
-    // Reset path histories when switching accounts to avoid invalid folder IDs
-    for (final key in _pathHistories.keys) {
-      _pathHistories[key] = [];
-    }
   }
 
   /// List files for a tab

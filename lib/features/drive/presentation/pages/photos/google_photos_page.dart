@@ -28,6 +28,19 @@ class GooglePhotosPageState extends State<GooglePhotosPage>
   String? _itemsError;
   String? _albumsError;
 
+  void clearAndReload() {
+    setState(() {
+      _mediaItems = [];
+      _albums = [];
+      _isLoadingItems = true;
+      _isLoadingAlbums = true;
+      _itemsError = null;
+      _albumsError = null;
+    });
+    _loadPhotos();
+    _loadAlbums();
+  }
+
   void refresh() {
     _loadPhotos();
     _loadAlbums();
