@@ -115,7 +115,7 @@ class _LoginDialogState extends State<_LoginDialog>
           'display_name': account.displayName,
           'photo_url': account.photoUrl,
         };
-        widget.credentialRepository.saveCredential(jsonEncode(credData));
+        await widget.credentialRepository.saveCredential(jsonEncode(credData));
         widget.onLogin(account.email);
         if (mounted) Navigator.of(context).pop();
       }
@@ -126,7 +126,7 @@ class _LoginDialogState extends State<_LoginDialog>
     }
   }
 
-  void _handleLogin() {
+  Future<void> _handleLogin() async {
     if (_selectedTabIndex == 0) {
       if (_oauthEmailController.text.isEmpty ||
           _oauthAccessTokenController.text.isEmpty) {
@@ -148,9 +148,9 @@ class _LoginDialogState extends State<_LoginDialog>
 
       try {
         final jsonString = jsonEncode(oauthData);
-        widget.credentialRepository.saveCredential(jsonString);
+        await widget.credentialRepository.saveCredential(jsonString);
         widget.onLogin(_oauthEmailController.text.trim());
-        Navigator.of(context).pop();
+        if (mounted) Navigator.of(context).pop();
       } catch (e) {
         _showErrorDialog(context, e.toString());
       }
@@ -158,10 +158,10 @@ class _LoginDialogState extends State<_LoginDialog>
       final content = _serviceAccountController.text;
       if (_isValidServiceAccount(content)) {
         try {
-          widget.credentialRepository.saveCredential(content);
+          await widget.credentialRepository.saveCredential(content);
           final creds = jsonDecode(content);
           widget.onLogin(creds['client_email']);
-          Navigator.of(context).pop();
+          if (mounted) Navigator.of(context).pop();
         } catch (e) {
           _showErrorDialog(context, e.toString());
         }
@@ -186,20 +186,21 @@ class _LoginDialogState extends State<_LoginDialog>
         return;
       }
 
+      // Keys must match what CredentialModel/S3DriveDataSource expect
       final s3Data = {
         'auth_type': 's3',
-        'endpoint': endpoint,
-        'access_key': accessKey,
-        'secret_key': secretKey,
-        'bucket': bucket,
-        'region': region.isEmpty ? 'us-east-1' : region,
+        's3_endpoint': endpoint,
+        's3_access_key': accessKey,
+        's3_secret_key': secretKey,
+        's3_bucket': bucket,
+        's3_region': region.isEmpty ? 'us-east-1' : region,
       };
 
       try {
         final jsonString = jsonEncode(s3Data);
-        widget.credentialRepository.saveCredential(jsonString);
+        await widget.credentialRepository.saveCredential(jsonString);
         widget.onLogin(endpoint);
-        Navigator.of(context).pop();
+        if (mounted) Navigator.of(context).pop();
       } catch (e) {
         _showErrorDialog(context, e.toString());
       }

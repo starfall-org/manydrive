@@ -14,24 +14,31 @@ class GooglePhotosRepositoryImpl implements GooglePhotosRepository {
   );
 
   @override
-  Future<List<GooglePhotoItem>> getMediaItems() async {
+  Future<PhotosPage<GooglePhotoItem>> getMediaItems({String? pageToken}) async {
     final client = _googleDriveDataSource.authClient;
     if (client == null) throw Exception('Not logged in to Google');
-    return await _photosDataSource.listMediaItems(client);
+    return await _photosDataSource.listMediaItems(client, pageToken: pageToken);
   }
 
   @override
-  Future<List<GooglePhotoAlbum>> getAlbums() async {
+  Future<PhotosPage<GooglePhotoAlbum>> getAlbums({String? pageToken}) async {
     final client = _googleDriveDataSource.authClient;
     if (client == null) throw Exception('Not logged in to Google');
-    return await _photosDataSource.listAlbums(client);
+    return await _photosDataSource.listAlbums(client, pageToken: pageToken);
   }
 
   @override
-  Future<List<GooglePhotoItem>> getAlbumMediaItems(String albumId) async {
+  Future<PhotosPage<GooglePhotoItem>> getAlbumMediaItems(
+    String albumId, {
+    String? pageToken,
+  }) async {
     final client = _googleDriveDataSource.authClient;
     if (client == null) throw Exception('Not logged in to Google');
-    return await _photosDataSource.listAlbumMediaItems(client, albumId);
+    return await _photosDataSource.listAlbumMediaItems(
+      client,
+      albumId,
+      pageToken: pageToken,
+    );
   }
 
   @override

@@ -115,6 +115,12 @@ class _SideMenuWidgetState extends State<SideMenuWidget> {
       await _loadCredentials();
       if (newSelected != null) {
         widget.onLogin(newSelected);
+      } else if (mounted) {
+        showLoginDialog(
+          context,
+          widget.credentialRepository,
+          widget.onLogin,
+        );
       }
     }
   }

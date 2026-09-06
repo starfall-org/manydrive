@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 
+// Google apps-style seed (Drive blue); dynamic color overrides it on Android 12+
+const Color _seedColor = Color(0xFF1A73E8);
+
 ThemeData lightTheme(ColorScheme? lightDynamic) => ThemeData(
   useMaterial3: true,
   colorScheme:
       lightDynamic ??
       ColorScheme.fromSeed(
-        seedColor: const Color.fromARGB(255, 245, 244, 244),
+        seedColor: _seedColor,
         brightness: Brightness.light,
       ),
 );
@@ -16,7 +19,7 @@ ThemeData darkTheme(ColorScheme? darkDynamic, {bool superDark = false}) =>
       colorScheme:
           darkDynamic ??
           ColorScheme.fromSeed(
-            seedColor: const Color.fromARGB(255, 71, 69, 66),
+            seedColor: _seedColor,
             brightness: Brightness.dark,
           ),
       scaffoldBackgroundColor:

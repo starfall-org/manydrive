@@ -21,33 +21,65 @@ class AlbumDetailPage extends StatefulWidget {
 class _AlbumDetailPageState extends State<AlbumDetailPage> {
   List<GooglePhotoItem> _mediaItems = [];
   bool _isLoading = true;
+  bool _isLoadingMore = false;
+  String? _pageToken;
   String? _error;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _loadAlbumItems();
   }
 
-  Future<void> _loadAlbumItems() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 300) {
+      _loadAlbumItems(loadMore: true);
+    }
+  }
+
+  Future<void> _loadAlbumItems({bool loadMore = false}) async {
+    if (loadMore) {
+      if (_pageToken == null || _isLoadingMore || _isLoading) return;
+      setState(() => _isLoadingMore = true);
+    } else {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
 
     try {
-      final items = await widget.photosRepository.getAlbumMediaItems(widget.album.id);
+      final page = await widget.photosRepository.getAlbumMediaItems(
+        widget.album.id,
+        pageToken: loadMore ? _pageToken : null,
+      );
       if (mounted) {
         setState(() {
-          _mediaItems = items;
+          if (loadMore) {
+            _mediaItems.addAll(page.items);
+          } else {
+            _mediaItems = page.items;
+          }
+          _pageToken = page.nextPageToken;
           _isLoading = false;
+          _isLoadingMore = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = e.toString();
+          if (!loadMore) _error = e.toString();
           _isLoading = false;
+          _isLoadingMore = false;
         });
       }
     }
@@ -79,14 +111,24 @@ class _AlbumDetailPageState extends State<AlbumDetailPage> {
                       ),
                     )
                   : GridView.builder(
+                      controller: _scrollController,
                       padding: const EdgeInsets.all(8),
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 3,
                         crossAxisSpacing: 8,
                         mainAxisSpacing: 8,
                       ),
-                      itemCount: _mediaItems.length,
+                      itemCount: _mediaItems.length + (_isLoadingMore ? 1 : 0),
                       itemBuilder: (context, index) {
+                        if (index >= _mediaItems.length) {
+                          return const Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          );
+                        }
                         final item = _mediaItems[index];
                         return GestureDetector(
                           onTap: () {

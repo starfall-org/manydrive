@@ -199,22 +199,27 @@ class GoogleDriveDataSource {
     await _driveApi!.files.create(driveFile);
   }
 
+  /// Moves to Drive trash instead of deleting permanently, so the Trash page works
   Future<void> deleteFile(String fileId) async {
     if (_driveApi == null) {
       throw Exception('Not logged in');
     }
-    await _driveApi!.files.delete(fileId);
+    await _driveApi!.files.update(drive.File()..trashed = true, fileId);
   }
 
   Future<void> moveFile(String fileId, String newParentId) async {
     if (_driveApi == null) {
       throw Exception('Not logged in');
     }
-    final driveFile =
-        drive.File()
-          ..id = fileId
-          ..parents = [newParentId];
-    await _driveApi!.files.update(driveFile, fileId);
+    // Drive API v3 ignores 'parents' in the body; must use add/removeParents
+    final current = await _driveApi!.files.get(fileId, $fields: 'parents');
+    final oldParents = (current.parents ?? []).join(',');
+    await _driveApi!.files.update(
+      drive.File(),
+      fileId,
+      addParents: newParentId,
+      removeParents: oldParents.isEmpty ? null : oldParents,
+    );
   }
 
   Future<void> copyFile(String fileId, String newParentId) async {

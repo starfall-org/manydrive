@@ -22,16 +22,25 @@ class GooglePhotosPageState extends State<GooglePhotosPage>
 
   List<GooglePhotoItem> _mediaItems = [];
   List<GooglePhotoAlbum> _albums = [];
+  String? _itemsPageToken;
+  String? _albumsPageToken;
 
   bool _isLoadingItems = true;
   bool _isLoadingAlbums = true;
+  bool _isLoadingMoreItems = false;
+  bool _isLoadingMoreAlbums = false;
   String? _itemsError;
   String? _albumsError;
+
+  final ScrollController _photosScrollController = ScrollController();
+  final ScrollController _albumsScrollController = ScrollController();
 
   void clearAndReload() {
     setState(() {
       _mediaItems = [];
       _albums = [];
+      _itemsPageToken = null;
+      _albumsPageToken = null;
       _isLoadingItems = true;
       _isLoadingAlbums = true;
       _itemsError = null;
@@ -50,6 +59,8 @@ class GooglePhotosPageState extends State<GooglePhotosPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _photosScrollController.addListener(_onPhotosScroll);
+    _albumsScrollController.addListener(_onAlbumsScroll);
     _loadPhotos();
     _loadAlbums();
   }
@@ -57,52 +68,100 @@ class GooglePhotosPageState extends State<GooglePhotosPage>
   @override
   void dispose() {
     _tabController.dispose();
+    _photosScrollController.dispose();
+    _albumsScrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadPhotos() async {
-    setState(() {
-      _isLoadingItems = true;
-      _itemsError = null;
-    });
+  void _onPhotosScroll() {
+    if (_photosScrollController.position.pixels >=
+        _photosScrollController.position.maxScrollExtent - 300) {
+      _loadPhotos(loadMore: true);
+    }
+  }
+
+  void _onAlbumsScroll() {
+    if (_albumsScrollController.position.pixels >=
+        _albumsScrollController.position.maxScrollExtent - 300) {
+      _loadAlbums(loadMore: true);
+    }
+  }
+
+  Future<void> _loadPhotos({bool loadMore = false}) async {
+    if (loadMore) {
+      if (_itemsPageToken == null || _isLoadingMoreItems || _isLoadingItems) {
+        return;
+      }
+      setState(() => _isLoadingMoreItems = true);
+    } else {
+      setState(() {
+        _isLoadingItems = true;
+        _itemsError = null;
+      });
+    }
 
     try {
-      final items = await _photosRepository.getMediaItems();
+      final page = await _photosRepository.getMediaItems(
+        pageToken: loadMore ? _itemsPageToken : null,
+      );
       if (mounted) {
         setState(() {
-          _mediaItems = items;
+          if (loadMore) {
+            _mediaItems.addAll(page.items);
+          } else {
+            _mediaItems = page.items;
+          }
+          _itemsPageToken = page.nextPageToken;
           _isLoadingItems = false;
+          _isLoadingMoreItems = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _itemsError = e.toString();
+          if (!loadMore) _itemsError = e.toString();
           _isLoadingItems = false;
+          _isLoadingMoreItems = false;
         });
       }
     }
   }
 
-  Future<void> _loadAlbums() async {
-    setState(() {
-      _isLoadingAlbums = true;
-      _albumsError = null;
-    });
+  Future<void> _loadAlbums({bool loadMore = false}) async {
+    if (loadMore) {
+      if (_albumsPageToken == null || _isLoadingMoreAlbums || _isLoadingAlbums) {
+        return;
+      }
+      setState(() => _isLoadingMoreAlbums = true);
+    } else {
+      setState(() {
+        _isLoadingAlbums = true;
+        _albumsError = null;
+      });
+    }
 
     try {
-      final albumsList = await _photosRepository.getAlbums();
+      final page = await _photosRepository.getAlbums(
+        pageToken: loadMore ? _albumsPageToken : null,
+      );
       if (mounted) {
         setState(() {
-          _albums = albumsList;
+          if (loadMore) {
+            _albums.addAll(page.items);
+          } else {
+            _albums = page.items;
+          }
+          _albumsPageToken = page.nextPageToken;
           _isLoadingAlbums = false;
+          _isLoadingMoreAlbums = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _albumsError = e.toString();
+          if (!loadMore) _albumsError = e.toString();
           _isLoadingAlbums = false;
+          _isLoadingMoreAlbums = false;
         });
       }
     }
@@ -245,14 +304,24 @@ class GooglePhotosPageState extends State<GooglePhotosPage>
     }
 
     return GridView.builder(
+      controller: _photosScrollController,
       padding: const EdgeInsets.all(8),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
         crossAxisSpacing: 8,
         mainAxisSpacing: 8,
       ),
-      itemCount: _mediaItems.length,
+      itemCount: _mediaItems.length + (_isLoadingMoreItems ? 1 : 0),
       itemBuilder: (context, index) {
+        if (index >= _mediaItems.length) {
+          return const Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
         final item = _mediaItems[index];
         return GestureDetector(
           onTap: () {
@@ -338,9 +407,22 @@ class GooglePhotosPageState extends State<GooglePhotosPage>
     }
 
     return ListView.builder(
+      controller: _albumsScrollController,
       padding: const EdgeInsets.all(8),
-      itemCount: _albums.length,
+      itemCount: _albums.length + (_isLoadingMoreAlbums ? 1 : 0),
       itemBuilder: (context, index) {
+        if (index >= _albums.length) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
         final album = _albums[index];
         return Card(
           margin: const EdgeInsets.only(bottom: 8),

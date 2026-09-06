@@ -42,9 +42,6 @@ class TopBarWidget extends StatelessWidget implements PreferredSizeWidget {
             tooltip: 'Sort',
           ),
       ],
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
-      ),
     );
   }
 

@@ -77,11 +77,22 @@ class GooglePhotoAlbum {
   }
 }
 
+/// One page of results plus the token to fetch the next page
+typedef PhotosPage<T> = ({List<T> items, String? nextPageToken});
+
 class GooglePhotosDataSource {
   static const _baseUrl = 'https://photoslibrary.googleapis.com/v1';
+  static const _host = 'photoslibrary.googleapis.com';
+  static const _pageSize = 50;
 
-  Future<List<GooglePhotoItem>> listMediaItems(http.Client client, {String? pageToken}) async {
-    final url = Uri.parse('$_baseUrl/mediaItems?pageSize=50${pageToken != null ? '&pageToken=$pageToken' : ''}');
+  Future<PhotosPage<GooglePhotoItem>> listMediaItems(
+    http.Client client, {
+    String? pageToken,
+  }) async {
+    final url = Uri.https(_host, '/v1/mediaItems', {
+      'pageSize': '$_pageSize',
+      if (pageToken != null) 'pageToken': pageToken,
+    });
     final response = await client.get(url);
 
     if (response.statusCode != 200) {
@@ -91,13 +102,22 @@ class GooglePhotosDataSource {
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final itemsJson = data['mediaItems'] as List<dynamic>? ?? [];
 
-    return itemsJson
-        .map((item) => GooglePhotoItem.fromJson(item as Map<String, dynamic>))
-        .toList();
+    return (
+      items: itemsJson
+          .map((item) => GooglePhotoItem.fromJson(item as Map<String, dynamic>))
+          .toList(),
+      nextPageToken: data['nextPageToken'] as String?,
+    );
   }
 
-  Future<List<GooglePhotoAlbum>> listAlbums(http.Client client) async {
-    final url = Uri.parse('$_baseUrl/albums?pageSize=50');
+  Future<PhotosPage<GooglePhotoAlbum>> listAlbums(
+    http.Client client, {
+    String? pageToken,
+  }) async {
+    final url = Uri.https(_host, '/v1/albums', {
+      'pageSize': '$_pageSize',
+      if (pageToken != null) 'pageToken': pageToken,
+    });
     final response = await client.get(url);
 
     if (response.statusCode != 200) {
@@ -107,17 +127,28 @@ class GooglePhotosDataSource {
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final albumsJson = data['albums'] as List<dynamic>? ?? [];
 
-    return albumsJson
-        .map((album) => GooglePhotoAlbum.fromJson(album as Map<String, dynamic>))
-        .toList();
+    return (
+      items: albumsJson
+          .map((album) => GooglePhotoAlbum.fromJson(album as Map<String, dynamic>))
+          .toList(),
+      nextPageToken: data['nextPageToken'] as String?,
+    );
   }
 
-  Future<List<GooglePhotoItem>> listAlbumMediaItems(http.Client client, String albumId) async {
+  Future<PhotosPage<GooglePhotoItem>> listAlbumMediaItems(
+    http.Client client,
+    String albumId, {
+    String? pageToken,
+  }) async {
     final url = Uri.parse('$_baseUrl/mediaItems:search');
     final response = await client.post(
       url,
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'albumId': albumId, 'pageSize': 50}),
+      body: jsonEncode({
+        'albumId': albumId,
+        'pageSize': _pageSize,
+        if (pageToken != null) 'pageToken': pageToken,
+      }),
     );
 
     if (response.statusCode != 200) {
@@ -127,9 +158,12 @@ class GooglePhotosDataSource {
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final itemsJson = data['mediaItems'] as List<dynamic>? ?? [];
 
-    return itemsJson
-        .map((item) => GooglePhotoItem.fromJson(item as Map<String, dynamic>))
-        .toList();
+    return (
+      items: itemsJson
+          .map((item) => GooglePhotoItem.fromJson(item as Map<String, dynamic>))
+          .toList(),
+      nextPageToken: data['nextPageToken'] as String?,
+    );
   }
 
   Future<Uint8List> getMediaItemBytes(http.Client client, GooglePhotoItem item) async {

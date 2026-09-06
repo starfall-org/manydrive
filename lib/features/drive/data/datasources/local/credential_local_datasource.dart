@@ -48,7 +48,8 @@ class CredentialLocalDataSource {
   Future<Map<String, dynamic>?> getCredential(String emailOrEndpoint) async {
     final credentials = await listCredentials();
     for (final cred in credentials) {
-      final identifier = cred['client_email'] ?? cred['s3_endpoint'];
+      final identifier =
+          cred['client_email'] ?? cred['s3_endpoint'] ?? 'unknown';
       if (identifier == emailOrEndpoint) {
         return cred;
       }
@@ -62,10 +63,22 @@ class CredentialLocalDataSource {
 
     for (final cred in credList) {
       final jsonCred = jsonDecode(cred);
-      final identifier = jsonCred['client_email'] ?? jsonCred['s3_endpoint'];
+      final identifier =
+          jsonCred['client_email'] ?? jsonCred['s3_endpoint'] ?? 'unknown';
       if (identifier == emailOrEndpoint) {
         credList.remove(cred);
         await prefs.setStringList(_credentialsKey, credList);
+        // Don't leave the selection pointing at the deleted account
+        if (await getSelectedEmail() == emailOrEndpoint) {
+          if (credList.isEmpty) {
+            await prefs.remove(_selectedEmailKey);
+          } else {
+            final next = jsonDecode(credList.first);
+            final nextIdentifier =
+                next['client_email'] ?? next['s3_endpoint'] ?? 'unknown';
+            await setSelectedEmail(nextIdentifier);
+          }
+        }
         return emailOrEndpoint;
       }
     }
