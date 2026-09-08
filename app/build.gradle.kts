@@ -52,6 +52,10 @@ android {
 }
 
 dependencies {
+    // OkHttp 5.4+ requires compileSdk 36+ (5.5+ requires 37). Keep the
+    // dependency graph compatible with this app's compileSdk 35 / AGP 8.7.
+    implementation(enforcedPlatform("com.squareup.okhttp3:okhttp-bom:5.3.1"))
+
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)
