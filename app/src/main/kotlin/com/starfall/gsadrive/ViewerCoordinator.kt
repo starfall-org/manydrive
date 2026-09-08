@@ -1,13 +1,11 @@
 package com.starfall.gsadrive
 
 import android.content.Context
-import android.net.Uri
 import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import com.starfall.gsadrive.data.DriveApi
 import com.starfall.gsadrive.data.DriveFile
@@ -18,6 +16,7 @@ import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -35,12 +34,30 @@ internal class ViewerCoordinator(
     private val currentFiles: () -> List<DriveFile>,
     private val player: () -> Player?,
     private val awaitPlayer: suspend () -> Player,
-    private val requestNotificationPermission: () -> Unit
+    private val requestNotificationPermission: () -> Unit,
+    private val requestAccessToken: () -> Unit
 ) {
     var state by mutableStateOf<ViewerState?>(null)
         private set
 
     private var generation = 0
+    private var awaitingTokenFor: String? = null
+    private var mediaPrefetchJob: Job? = null
+    private var requestedPrefetchAfterMediaId: String? = null
+
+    fun onAccessTokenAvailable() {
+        val expectedAccount = awaitingTokenFor ?: return
+        if (activeAccount()?.key != expectedAccount || accessToken() == null) return
+        awaitingTokenFor = null
+        val pending = state ?: return
+        open(pending.file, pending.minimized, pending.swipeQueue)
+    }
+
+    fun onAccessTokenError(message: String) {
+        if (awaitingTokenFor == null) return
+        awaitingTokenFor = null
+        state = state?.copy(loading = false, error = message)
+    }
 
     fun syncToMediaItem(mediaItem: MediaItem) {
         val source = PlaybackSourceRegistry.get(mediaItem.mediaId) ?: return
@@ -58,6 +75,7 @@ internal class ViewerCoordinator(
             previewPaths = previous?.previewPaths.orEmpty()
         )
         activeAccount()?.let { prefetchAdjacentImages(it, queue, index) }
+        prefetchNextMedia(source.mediaId)
     }
 
     fun open(file: DriveFile, minimized: Boolean = false, swipeQueue: List<DriveFile>? = null) {
@@ -67,14 +85,25 @@ internal class ViewerCoordinator(
             return
         }
         val account = activeAccount() ?: return
-        if (isMediaPreview(file)) requestNotificationPermission()
+        awaitingTokenFor = null
         val request = ++generation
         val browsingQueue = if (isSwipePreview(file)) {
             (swipeQueue ?: currentFiles().filter(::isSwipePreview)).ifEmpty { listOf(file) }
         } else emptyList()
         val browsingIndex = browsingQueue.indexOfFirst { it.id == file.id }
 
+        if (account.type != AccountType.S3 && accessToken() == null) {
+            awaitingTokenFor = account.key
+            state = ViewerState(
+                file = file, loading = true, minimized = minimized,
+                swipeQueue = browsingQueue, swipeIndex = browsingIndex
+            )
+            requestAccessToken()
+            return
+        }
+
         if (isMediaPreview(file)) {
+            requestNotificationPermission()
             openMedia(request, account, file, minimized, browsingQueue)
             return
         }
@@ -159,6 +188,7 @@ internal class ViewerCoordinator(
         }
         PlaybackSourceRegistry.replace(sources)
         val selectedSource = sources.getOrNull(mediaIndex) ?: return
+        prefetchNextMedia(selectedSource.mediaId)
         state = ViewerState(
             file = file,
             localPath = selectedSource.cacheFile.path,
@@ -173,14 +203,7 @@ internal class ViewerCoordinator(
         scope.launch {
             runCatching {
                 val controller = player() ?: awaitPlayer()
-                val items = sources.map { source ->
-                    MediaItem.Builder()
-                        .setMediaId(source.mediaId)
-                        .setUri(Uri.Builder().scheme("manydrive").authority("media")
-                            .appendQueryParameter("id", source.mediaId).build())
-                        .setMediaMetadata(MediaMetadata.Builder().setTitle(source.file.name).build())
-                        .build()
-                }
+                val items = sources.map(PlaybackSource::toMediaItem)
                 controller to items
             }.onSuccess { (controller, items) ->
                 if (request == generation && state?.file?.id == file.id) {
@@ -209,13 +232,30 @@ internal class ViewerCoordinator(
         val queue = current.swipeQueue
         val target = queue.getOrNull(index) ?: return
         if (target.id == current.file.id) return
-        open(target, minimized = current.minimized, swipeQueue = queue)
+        val controller = player()
+        val source = PlaybackSourceRegistry.all().firstOrNull { it.file.id == target.id }
+        val mediaIndex = if (controller != null && source != null)
+            (0 until controller.mediaItemCount).firstOrNull { controller.getMediaItemAt(it).mediaId == source.mediaId }
+        else null
+        if (isMediaPreview(target) && controller != null && source != null && mediaIndex != null) {
+            // Select the existing playlist item, preserving its page and queue.
+            PlaybackProgress.save(context, controller.currentMediaItem?.mediaId, controller.currentPosition)
+            controller.seekTo(mediaIndex, PlaybackProgress.read(context, source.mediaId))
+            controller.play()
+            syncToMediaItem(controller.getMediaItemAt(mediaIndex))
+        } else {
+            open(target, minimized = current.minimized, swipeQueue = queue)
+        }
     }
 
     fun close() {
+        awaitingTokenFor = null
         ++generation
         player()?.stop()
         player()?.clearMediaItems()
+        requestedPrefetchAfterMediaId = null
+        mediaPrefetchJob?.cancel()
+        mediaPrefetchJob = null
         PlaybackSourceRegistry.clear()
         state = null
     }
@@ -293,6 +333,45 @@ internal class ViewerCoordinator(
         if (!temporary.renameTo(target)) {
             temporary.copyTo(target, overwrite = true)
             temporary.delete()
+        }
+    }
+
+    /**
+     * Materialize only the next media item into the shared viewer cache ahead of playback.
+     * The adjacent ExoPlayer remains unprepared/frozen; this only downloads bytes on Dispatchers.IO.
+     * Requests are serialized so fast swipes never start a fan-out of background downloads.
+     */
+    private fun prefetchNextMedia(currentMediaId: String) {
+        requestedPrefetchAfterMediaId = currentMediaId
+        if (mediaPrefetchJob?.isActive == true) return
+        startNextMediaPrefetch()
+    }
+
+    private fun startNextMediaPrefetch() {
+        val currentMediaId = requestedPrefetchAfterMediaId ?: return
+        requestedPrefetchAfterMediaId = null
+        val sources = PlaybackSourceRegistry.all()
+        val currentIndex = sources.indexOfFirst { it.mediaId == currentMediaId }
+        if (currentIndex < 0) return
+        val current = sources[currentIndex]
+        val next = sources.getOrNull(currentIndex + 1) ?: return
+
+        if (next.cacheFile.isFile && next.cacheFile.length() > 0L) return
+
+        val job = scope.launch(Dispatchers.IO) {
+            runCatching {
+                // Do not compete with startup of the current item. resolve() shares the same per-item
+                // lock as ExoPlayer, so this either waits for its download or performs it once.
+                PlaybackSourceRegistry.resolve(current.mediaId)
+                PlaybackSourceRegistry.resolve(next.mediaId)
+            }.onSuccess { prunePreviewCache() }
+        }
+        mediaPrefetchJob = job
+        job.invokeOnCompletion {
+            scope.launch {
+                if (mediaPrefetchJob === job) mediaPrefetchJob = null
+                if (requestedPrefetchAfterMediaId != null) startNextMediaPrefetch()
+            }
         }
     }
 

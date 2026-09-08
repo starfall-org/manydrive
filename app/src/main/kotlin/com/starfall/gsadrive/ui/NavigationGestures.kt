@@ -21,10 +21,15 @@ internal fun navigationSwipe(startX: Float, distance: Float, edgeWidth: Float, t
 
 internal fun Modifier.navigationSwipes(
     enabled: Boolean,
+    allowTabSwipes: Boolean = true,
     onSwipe: (NavigationSwipe) -> Unit
-): Modifier = if (!enabled) this else pointerInput(onSwipe) {
+): Modifier = if (!enabled) this else pointerInput(onSwipe, allowTabSwipes) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
+        val edgeWidth = 24.dp.toPx()
+        // A real HorizontalPager owns normal tab drags. Keep only the drawer edge gesture here.
+        if (!allowTabSwipes && down.position.x > edgeWidth) return@awaitEachGesture
+
         var distance = 0f
         val drag = awaitHorizontalTouchSlopOrCancellation(down.id) { change, overSlop ->
             change.consume()
@@ -36,7 +41,7 @@ internal fun Modifier.navigationSwipes(
                 change.consume()
             }
             if (completed) {
-                navigationSwipe(down.position.x, distance, 24.dp.toPx(), 48.dp.toPx())?.let(onSwipe)
+                navigationSwipe(down.position.x, distance, edgeWidth, 48.dp.toPx())?.let(onSwipe)
             }
         }
     }

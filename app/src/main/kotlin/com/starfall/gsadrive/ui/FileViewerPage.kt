@@ -5,6 +5,10 @@ import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Replay10
 import androidx.compose.material.icons.outlined.Forward10
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Fullscreen
+import androidx.compose.material.icons.outlined.FullscreenExit
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.ui.graphics.Brush
@@ -18,6 +22,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.rememberUpdatedState
 import com.starfall.gsadrive.R
 import androidx.activity.compose.BackHandler
@@ -31,6 +38,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -48,6 +56,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.semantics.contentDescription
@@ -156,26 +165,26 @@ private fun SwipeViewer(
     onSwipeTo: (Int) -> Unit,
     onBack: () -> Unit
 ) {
-    // Queue is intentionally mirrored: swipe left = previous item, swipe right = next item.
-    fun pagerPage(logicalIndex: Int) = swipeQueue.lastIndex - logicalIndex
-    fun logicalIndex(page: Int) = swipeQueue.lastIndex - page
+    // Natural item order: drag left to next, drag right to previous.
+    val currentIndex by rememberUpdatedState(swipeIndex)
+    val currentSwipe by rememberUpdatedState(onSwipeTo)
 
-    val initialPage = pagerPage(swipeIndex).coerceIn(0, swipeQueue.lastIndex)
+    val initialPage = swipeIndex.coerceIn(0, swipeQueue.lastIndex)
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { swipeQueue.size })
 
     LaunchedEffect(swipeIndex, swipeQueue.size) {
-        val target = pagerPage(swipeIndex)
+        val target = swipeIndex
         if (target in 0 until swipeQueue.size && pagerState.currentPage != target && !pagerState.isScrollInProgress) {
             pagerState.animateScrollToPage(target)
         }
     }
 
-    LaunchedEffect(pagerState, swipeQueue, swipeIndex) {
+    LaunchedEffect(pagerState, swipeQueue) {
         snapshotFlow { pagerState.settledPage }
             .distinctUntilChanged()
             .collect { page ->
-                val target = logicalIndex(page)
-                if (target != swipeIndex && target in swipeQueue.indices) onSwipeTo(target)
+                val target = page
+                if (target != currentIndex && target in swipeQueue.indices) currentSwipe(target)
             }
     }
 
@@ -183,9 +192,9 @@ private fun SwipeViewer(
         state = pagerState,
         modifier = Modifier.fillMaxSize(),
         beyondViewportPageCount = 1,
-        key = { page -> swipeQueue[logicalIndex(page)].id }
+        key = { page -> swipeQueue[page].id }
     ) { page ->
-        val index = logicalIndex(page)
+        val index = page
         val item = swipeQueue[index]
         val current = index == swipeIndex && item.id == file.id
         if (current) {
@@ -236,7 +245,7 @@ private fun ViewerContent(
                 CopyableError(error)
                 FilledTonalButton(onClick = onBack) { Text("Đóng") }
             }
-            text != null -> TextEditor(text, saving, onTextChange, onSaveText)
+            text != null -> TextDocumentViewer(file.id, text, saving, onTextChange, onSaveText)
             localPath != null && file.mimeType.startsWith("image/") -> ImageViewer(localPath)
             localPath != null && (file.mimeType.startsWith("video/") || file.mimeType.startsWith("audio/")) ->
                 MediaViewer(player, alwaysShowControls = file.mimeType.startsWith("audio/"))
@@ -272,32 +281,93 @@ private fun AdjacentPreview(file: DriveFile) {
 }
 
 @Composable
-private fun TextEditor(
+private fun TextDocumentViewer(
+    fileId: String,
     text: String,
     saving: Boolean,
     onTextChange: (String) -> Unit,
     onSave: () -> Unit
 ) {
-    Column(
-        Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        OutlinedTextField(
-            value = text,
-            onValueChange = onTextChange,
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            enabled = !saving,
-            textStyle = MaterialTheme.typography.bodyMedium,
-            label = { Text("Nội dung") }
-        )
-        FilledTonalButton(onClick = onSave, enabled = !saving, modifier = Modifier.align(Alignment.End)) {
-            Text(if (saving) "Đang lưu…" else "Lưu thay đổi")
+    var editing by remember(fileId) { mutableStateOf(false) }
+    var menuOpen by remember(fileId) { mutableStateOf(false) }
+    var originalText by remember(fileId) { mutableStateOf(text) }
+
+    BackHandler(enabled = editing && !saving) {
+        onTextChange(originalText)
+        editing = false
+    }
+
+    if (editing) {
+        Column(
+            Modifier.fillMaxSize().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedTextField(
+                value = text,
+                onValueChange = onTextChange,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                enabled = !saving,
+                textStyle = MaterialTheme.typography.bodyMedium,
+                label = { Text("Nội dung") }
+            )
+            Row(
+                modifier = Modifier.align(Alignment.End),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TextButton(
+                    enabled = !saving,
+                    onClick = {
+                        onTextChange(originalText)
+                        editing = false
+                    }
+                ) { Text("Hủy") }
+                FilledTonalButton(
+                    enabled = !saving,
+                    onClick = {
+                        onSave()
+                        editing = false
+                    }
+                ) { Text(if (saving) "Đang lưu…" else "Lưu thay đổi") }
+            }
+        }
+    } else {
+        Box(Modifier.fillMaxSize()) {
+            SelectionContainer {
+                Column(
+                    Modifier.fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 72.dp)
+                ) {
+                    Text(
+                        text = text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+            Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+                IconButton(enabled = !saving, onClick = { menuOpen = true }) {
+                    Icon(Icons.Outlined.MoreVert, "Tùy chọn")
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Sửa") },
+                        leadingIcon = { Icon(Icons.Outlined.Edit, null) },
+                        enabled = !saving,
+                        onClick = {
+                            originalText = text
+                            menuOpen = false
+                            editing = true
+                        }
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun ImageViewer(path: String) {
+internal fun ImageViewer(path: String) {
     val bitmap = remember(path) { BitmapFactory.decodeFile(path)?.asImageBitmap() }
     if (bitmap == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -320,7 +390,10 @@ internal fun MediaViewer(
     compactFraction: Float = 0f,
     title: String = "",
     onExpand: () -> Unit = {},
-    onClose: () -> Unit = {}
+    onClose: () -> Unit = {},
+    interactive: Boolean = true,
+    fullscreen: Boolean = false,
+    onToggleFullscreen: () -> Unit = {}
 ) {
     var controlsVisible by remember(player) { mutableStateOf(true) }
     var interactionVersion by remember { mutableLongStateOf(0L) }
@@ -330,6 +403,7 @@ internal fun MediaViewer(
     val controlsInteraction = remember { MutableInteractionSource() }
     val controlsPressed by controlsInteraction.collectIsPressedAsState()
     val compact = compactFraction > 0.85f
+    val currentInteractive by rememberUpdatedState(interactive)
     val currentCompact by rememberUpdatedState(compact)
     val currentExpand by rememberUpdatedState(onExpand)
     val slideshowEnabled by PlaybackSettings.slideshowEnabled.collectAsState()
@@ -389,12 +463,14 @@ internal fun MediaViewer(
                     setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                     setShutterBackgroundColor(android.graphics.Color.BLACK)
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    keepScreenOn = true
+                    keepScreenOn = interactive
                 }
             },
             update = { view ->
                 if (view.player !== player) view.player = player
                 view.useController = false
+                view.keepScreenOn = interactive
+                view.setShowBuffering(if (interactive) PlayerView.SHOW_BUFFERING_WHEN_PLAYING else PlayerView.SHOW_BUFFERING_ALWAYS)
             },
             onRelease = { view ->
                 view.player = null
@@ -403,7 +479,8 @@ internal fun MediaViewer(
         )
         Box(
             Modifier.fillMaxSize().pointerInput(player) {
-                detectTapGestures(onTap = { if (currentCompact) currentExpand() else { controlsVisible = !controlsVisible; interactionVersion++ } }, onDoubleTap = { offset ->
+                detectTapGestures(onTap = { if (!currentInteractive) return@detectTapGestures; if (currentCompact) currentExpand() else { controlsVisible = !controlsVisible; interactionVersion++ } }, onDoubleTap = { offset ->
+                    if (!currentInteractive) return@detectTapGestures
                     if (currentCompact) {
                         currentExpand()
                     } else if (player.isCurrentMediaItemSeekable &&
@@ -427,7 +504,7 @@ internal fun MediaViewer(
             Text(it, Modifier.align(Alignment.Center).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))).padding(horizontal = 20.dp, vertical = 12.dp),
                 color = Color.White)
         }
-        if (compact) {
+        if (compact && interactive) {
             Row(Modifier.fillMaxSize().graphicsLayer { alpha = ((compactFraction - 0.85f) / 0.15f).coerceIn(0f, 1f) }
                 .padding(start = videoWidth, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
@@ -439,15 +516,21 @@ internal fun MediaViewer(
                 }
             }
         }
-        if (compactFraction < 0.5f && controlsVisible) Column(
+        if (compactFraction < 0.5f && controlsVisible && interactive) Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                 .graphicsLayer { alpha = (1f - compactFraction * 2f).coerceIn(0f, 1f) }
                 .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))).padding(horizontal = 20.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Text(
+                title,
+                Modifier.fillMaxWidth(),
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleSmall
+            )
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(title, Modifier.weight(1f), color = Color.White, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
                 Box {
                     IconButton(onClick = { settingsOpen = true; interactionVersion++ }) {
                         Icon(Icons.Outlined.Settings, "Cài đặt phát", tint = Color.White)
@@ -460,27 +543,36 @@ internal fun MediaViewer(
                             onClick = { PlaybackSettings.setSlideshowEnabled(!slideshowEnabled); interactionVersion++ })
                     }
                 }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                IconButton(enabled = seekable, onClick = { player.seekBack(); interactionVersion++ }) {
-                    Icon(Icons.Outlined.Replay10, "Lùi 10 giây", tint = Color.White)
-                }
-                CompositionLocalProvider(LocalContentColor provides Color.White) {
-                    IconButton(onClick = {
-                        if (player.playWhenReady && player.playbackState != Player.STATE_ENDED) player.pause()
-                        else {
-                            if (player.playbackState == Player.STATE_ENDED) player.seekTo(0)
-                            player.play()
+                Spacer(Modifier.weight(1f))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    IconButton(enabled = seekable, onClick = { player.seekBack(); interactionVersion++ }) {
+                        Icon(Icons.Outlined.Replay10, "Lùi 10 giây", tint = Color.White)
+                    }
+                    CompositionLocalProvider(LocalContentColor provides Color.White) {
+                        IconButton(onClick = {
+                            if (player.playWhenReady && player.playbackState != Player.STATE_ENDED) player.pause()
+                            else {
+                                if (player.playbackState == Player.STATE_ENDED) player.seekTo(0)
+                                player.play()
+                            }
+                            interactionVersion++
+                        }, modifier = Modifier.size(56.dp), interactionSource = controlsInteraction) {
+                            Icon(if (playRequested && player.playbackState != Player.STATE_ENDED) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                                if (playRequested && player.playbackState != Player.STATE_ENDED) "Tạm dừng" else "Phát",
+                                modifier = Modifier.size(40.dp))
                         }
-                        interactionVersion++
-                    }, modifier = Modifier.size(56.dp), interactionSource = controlsInteraction) {
-                        Icon(if (playRequested && player.playbackState != Player.STATE_ENDED) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                            if (playRequested && player.playbackState != Player.STATE_ENDED) "Tạm dừng" else "Phát",
-                            modifier = Modifier.size(40.dp))
+                    }
+                    IconButton(enabled = seekable, onClick = { player.seekForward(); interactionVersion++ }) {
+                        Icon(Icons.Outlined.Forward10, "Tiến 10 giây", tint = Color.White)
                     }
                 }
-                IconButton(enabled = seekable, onClick = { player.seekForward(); interactionVersion++ }) {
-                    Icon(Icons.Outlined.Forward10, "Tiến 10 giây", tint = Color.White)
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = { onToggleFullscreen(); interactionVersion++ }) {
+                    Icon(
+                        if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
+                        if (fullscreen) "Thoát toàn màn hình" else "Toàn màn hình",
+                        tint = Color.White
+                    )
                 }
             }
             Slider(

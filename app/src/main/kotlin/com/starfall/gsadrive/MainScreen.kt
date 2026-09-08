@@ -9,6 +9,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
@@ -41,6 +43,16 @@ import com.starfall.gsadrive.ui.theme.ManyDriveTheme
 import com.starfall.gsadrive.ui.theme.ThemeMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChanged
+
+
+private data class BrowserTabSearchState(
+    val query: String = "",
+    val folderSearching: Boolean = false,
+    val results: List<DriveFile>? = null,
+    val loading: Boolean = false,
+    val error: String? = null
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,7 +92,8 @@ internal fun App(
     swipeViewer: (Int) -> Unit = {},
     playback: Player? = null,
     minimizeViewer: () -> Unit = {},
-    expandViewer: () -> Unit = {}
+    expandViewer: () -> Unit = {},
+    browserModels: Map<Int, Model> = emptyMap()
 ) {
     var showAccounts by remember { mutableStateOf(false) }
     var showTypes by remember { mutableStateOf(false) }
@@ -90,11 +103,19 @@ internal fun App(
     var showFabMenu by remember { mutableStateOf(false) }
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var newFolderName by remember { mutableStateOf("") }
-    var searchQuery by remember { mutableStateOf("") }
-    var folderSearching by remember { mutableStateOf(false) }
-    var globalSearchResults by remember { mutableStateOf<List<DriveFile>?>(null) }
-    var globalSearchLoading by remember { mutableStateOf(false) }
-    var globalSearchError by remember { mutableStateOf<String?>(null) }
+    val active = accounts.active
+    val tabSearchStates = remember(active?.key) { mutableStateMapOf<Int, BrowserTabSearchState>() }
+    fun tabSearchState(index: Int): BrowserTabSearchState = tabSearchStates[index] ?: BrowserTabSearchState()
+    fun updateTabSearch(index: Int, update: (BrowserTabSearchState) -> BrowserTabSearchState) {
+        tabSearchStates[index] = update(tabSearchState(index))
+    }
+    val currentSearch = if (selected in 0..1) tabSearchState(selected) else BrowserTabSearchState()
+    val searchQuery = currentSearch.query
+    val folderSearching = currentSearch.folderSearching
+    val globalSearchResults = currentSearch.results
+    val globalSearchLoading = currentSearch.loading
+    val globalSearchError = currentSearch.error
+
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val drawerScope = rememberCoroutineScope()
     LaunchedEffect(accounts.revision) {
@@ -102,39 +123,58 @@ internal fun App(
         showTypes = false
         addingS3 = false
     }
-    LaunchedEffect(selected, model.path.lastOrNull()?.id) {
-        searchQuery = ""
-        folderSearching = false
-        globalSearchResults = null
-        globalSearchLoading = false
-        globalSearchError = null
-    }
-    val active = accounts.active
     LaunchedEffect(searchQuery, active?.key, selected) {
-        globalSearchError = null
+        if (selected !in 0..1) return@LaunchedEffect
+        val tabIndex = selected
+        updateTabSearch(tabIndex) { it.copy(error = null) }
         val query = searchQuery.trim()
-        if (query.isEmpty() || selected !in 0..1 || active == null || active.type == AccountType.S3) {
-            globalSearchResults = null
-            globalSearchLoading = false
+        if (query.isEmpty() || active == null || active.type == AccountType.S3) {
+            updateTabSearch(tabIndex) { it.copy(results = null, loading = false) }
             return@LaunchedEffect
         }
         val accountKey = active.key
-        globalSearchResults = emptyList()
-        globalSearchLoading = true
+        updateTabSearch(tabIndex) { it.copy(results = emptyList(), loading = true) }
         delay(350)
         searchDrive(query) { result ->
-            if (searchQuery.trim() != query || accounts.active?.key != accountKey || selected !in 0..1) return@searchDrive
-            globalSearchLoading = false
-            result.onSuccess { globalSearchResults = it }
-                .onFailure {
-                    globalSearchResults = emptyList()
-                    globalSearchError = it.message ?: "Không thể tìm kiếm trên Drive."
+            if (tabSearchState(tabIndex).query.trim() != query || accounts.active?.key != accountKey) return@searchDrive
+            result.onSuccess { files ->
+                updateTabSearch(tabIndex) { it.copy(results = files, loading = false, error = null) }
+            }.onFailure { failure ->
+                updateTabSearch(tabIndex) {
+                    it.copy(results = emptyList(), loading = false,
+                        error = failure.message ?: "Không thể tìm kiếm trên Drive.")
                 }
+            }
         }
     }
     val tabs = listOf(
         Tab("Tệp", Icons.Outlined.Folder), Tab("Chia sẻ", Icons.Outlined.People)
     )
+    val tabPagerState = rememberPagerState(
+        initialPage = selected.coerceIn(0, tabs.lastIndex),
+        pageCount = { tabs.size }
+    )
+    LaunchedEffect(selected) {
+        if (selected in tabs.indices && !tabPagerState.isScrollInProgress && tabPagerState.currentPage != selected) {
+            tabPagerState.scrollToPage(selected)
+        }
+    }
+    LaunchedEffect(tabPagerState, active?.type, selected) {
+        snapshotFlow { tabPagerState.settledPage }
+            .distinctUntilChanged()
+            .collect { page ->
+                if (page in tabs.indices && page != selected && isTabEnabled(active?.type, page)) select(page)
+            }
+    }
+    fun requestBrowserTab(index: Int) {
+        if (model.uploading || index !in tabs.indices || !isTabEnabled(active?.type, index)) return
+        showSettings = false
+        if (selected in tabs.indices) {
+            drawerScope.launch { tabPagerState.animateScrollToPage(index) }
+        } else {
+            select(index)
+        }
+    }
     val openAccounts = { showAccounts = true }
     val viewerExpanded = viewer != null && !viewer.minimized
     val viewerBlack = viewerExpanded && viewer?.let { isSwipePreview(it.file) } == true
@@ -167,7 +207,10 @@ internal fun App(
         enabled = !viewerExpanded && selected == 3 && !showFabMenu && !drawerState.isOpen && !showSettings &&
             !showAccounts && !showTypes && !addingS3
     ) { select(0) }
-    BackHandler(enabled = !viewerExpanded && model.path.isNotEmpty() && !showSettings && !showAccounts && !showTypes && !addingS3 && !drawerState.isOpen) { goUp() }
+    BackHandler(enabled = !viewerExpanded && model.path.isNotEmpty() && !showSettings && !showAccounts && !showTypes && !addingS3 && !drawerState.isOpen) {
+        if (selected in tabs.indices) tabSearchStates[selected] = BrowserTabSearchState()
+        goUp()
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -200,16 +243,10 @@ internal fun App(
             Scaffold(
                 modifier = Modifier.navigationSwipes(
                     enabled = !viewerExpanded && drawerState.isClosed && !drawerState.isAnimationRunning &&
-                        !showFabMenu && !showAccounts && !showTypes && !addingS3 && !showCreateFolderDialog
+                        !showFabMenu && !showAccounts && !showTypes && !addingS3 && !showCreateFolderDialog,
+                    allowTabSwipes = false
                 ) { gesture ->
-                    when (gesture) {
-                        NavigationSwipe.OPEN_DRAWER -> drawerScope.launch { drawerState.open() }
-                        NavigationSwipe.PREVIOUS_TAB, NavigationSwipe.NEXT_TAB -> {
-                            val target = selected + if (gesture == NavigationSwipe.NEXT_TAB) 1 else -1
-                            if (!showSettings && selected in tabs.indices && target in tabs.indices &&
-                                isTabEnabled(active?.type, target)) select(target)
-                        }
-                    }
+                    if (gesture == NavigationSwipe.OPEN_DRAWER) drawerScope.launch { drawerState.open() }
                 },
                 containerColor = if (viewerBlack) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.background,
                 topBar = {
@@ -217,7 +254,9 @@ internal fun App(
                         !viewerExpanded && !showSettings && selected in 0..1 && active != null && model.path.isEmpty() ->
                             DriveRootTopBar(
                                 query = searchQuery,
-                                onQueryChange = { searchQuery = it },
+                                onQueryChange = { value ->
+                                    if (selected in tabs.indices) updateTabSearch(selected) { it.copy(query = value) }
+                                },
                                 onMenu = { drawerScope.launch { drawerState.open() } },
                                 onAccounts = openAccounts,
                                 account = active
@@ -227,9 +266,16 @@ internal fun App(
                                 title = model.path.last().name,
                                 query = searchQuery,
                                 searching = folderSearching,
-                                onQueryChange = { searchQuery = it },
-                                onSearchingChange = { folderSearching = it },
-                                onBack = goUp,
+                                onQueryChange = { value ->
+                                    if (selected in tabs.indices) updateTabSearch(selected) { it.copy(query = value) }
+                                },
+                                onSearchingChange = { searching ->
+                                    if (selected in tabs.indices) updateTabSearch(selected) { it.copy(folderSearching = searching) }
+                                },
+                                onBack = {
+                                    if (selected in tabs.indices) tabSearchStates[selected] = BrowserTabSearchState()
+                                    goUp()
+                                },
                                 onRefresh = reload,
                                 onAccounts = openAccounts
                             )
@@ -290,7 +336,9 @@ internal fun App(
                         }
                         if (!showSettings) NavigationBar {
                             tabs.forEachIndexed { index, item ->
-                                NavigationBarItem(selected = index == selected, onClick = { showSettings = false; select(index) },
+                                NavigationBarItem(
+                                    selected = selected in tabs.indices && index == tabPagerState.currentPage,
+                                    onClick = { requestBrowserTab(index) },
                                     enabled = isTabEnabled(active?.type, index),
                                     icon = { Icon(item.icon, item.label) }, label = { Text(item.label) })
                             }
@@ -354,30 +402,62 @@ internal fun App(
                         )
                         showSettings -> SettingsPage(padding, themeMode, superDark, setThemeMode, setSuperDark, clearCache)
                         active == null -> StoragePage(model, padding, null, { showTypes = true }, openAccounts, signOut, openFile = openFile)
-                        else -> PullToRefreshBox(
+                        selected == 3 -> PullToRefreshBox(
                             isRefreshing = model.loading,
                             onRefresh = { if (!model.loading && !accounts.busy) reload() },
                             modifier = Modifier.fillMaxSize().padding(padding)
                         ) {
-                            val contentPadding = PaddingValues(0.dp)
-                            when {
-                                selected == 3 -> TrashPage(model, contentPadding, restoreFile)
-                                else -> FileBrowserPage(
-                                    model = model,
-                                    padding = contentPadding,
-                                    account = active,
-                                    shared = selected == 1,
-                                    query = searchQuery,
-                                    searchResults = globalSearchResults,
-                                    searchLoading = globalSearchLoading,
-                                    searchError = globalSearchError,
-                                    authorize = authorize,
-                                    openFolder = if (globalSearchResults != null && searchQuery.isNotBlank()) openSearchFolder else openFolder,
-                                    openFile = openFile,
-                                    actions = fileActions.copy(
-                                        trash = if (active.type != AccountType.S3 && selected == 0) fileActions.trash else null
+                            TrashPage(model, PaddingValues(0.dp), restoreFile)
+                        }
+                        else -> HorizontalPager(
+                            state = tabPagerState,
+                            modifier = Modifier.fillMaxSize().padding(padding),
+                            userScrollEnabled = !viewerExpanded && !showSettings && !model.uploading && !accounts.busy &&
+                                !showFabMenu && !showAccounts && !showTypes && !addingS3 && !showCreateFolderDialog &&
+                                isTabEnabled(active.type, 1),
+                            beyondViewportPageCount = 1,
+                            key = { page -> "browser-tab-$page" }
+                        ) { page ->
+                            val pageModel = if (page == selected) model
+                                else browserModels[page] ?: Model(user = model.user, token = model.token)
+                            val pageSearch = tabSearchState(page)
+                            val initialized = page == selected || browserModels.containsKey(page)
+
+                            PullToRefreshBox(
+                                isRefreshing = pageModel.loading,
+                                onRefresh = {
+                                    if (page == selected && !pageModel.loading && !accounts.busy) reload()
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                if (!initialized) {
+                                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        CircularProgressIndicator()
+                                    }
+                                } else {
+                                    val globalSearch = pageSearch.results != null && pageSearch.query.isNotBlank()
+                                    FileBrowserPage(
+                                        model = pageModel,
+                                        padding = PaddingValues(0.dp),
+                                        account = active,
+                                        shared = page == 1,
+                                        query = pageSearch.query,
+                                        searchResults = pageSearch.results,
+                                        searchLoading = pageSearch.loading,
+                                        searchError = pageSearch.error,
+                                        authorize = if (page == selected) authorize else ({}),
+                                        openFolder = { file ->
+                                            if (page == selected) {
+                                                tabSearchStates[page] = BrowserTabSearchState()
+                                                if (globalSearch) openSearchFolder(file) else openFolder(file)
+                                            }
+                                        },
+                                        openFile = { file -> if (page == selected) openFile(file) },
+                                        actions = fileActions.copy(
+                                            trash = if (active.type != AccountType.S3 && page == 0) fileActions.trash else null
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
                     }
@@ -393,8 +473,6 @@ internal fun App(
             if (mediaViewer != null && playback != null) {
                 ExpandableMediaPlayer(
                     player = playback,
-                    title = mediaViewer.file.name,
-                    audioOnly = mediaViewer.file.mimeType.startsWith("audio/"),
                     minimized = mediaViewer.minimized,
                     topPadding = playerTopPadding,
                     miniBounds = miniBounds,
@@ -403,6 +481,7 @@ internal fun App(
                     onClose = closeViewer,
                     queue = mediaViewer.swipeQueue,
                     index = mediaViewer.swipeIndex,
+                    previewPaths = mediaViewer.previewPaths,
                     onSwipeTo = swipeViewer
                 )
             }

@@ -6,6 +6,8 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
 import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
@@ -44,7 +46,13 @@ data class PlaybackSource(
     val accessToken: String?,
     val s3Config: S3Config?,
     val cacheFile: File
-)
+) {
+    fun toMediaItem(): MediaItem = MediaItem.Builder()
+        .setMediaId(mediaId)
+        .setUri(Uri.Builder().scheme("manydrive").authority("media").appendQueryParameter("id", mediaId).build())
+        .setMediaMetadata(MediaMetadata.Builder().setTitle(file.name).build())
+        .build()
+}
 
 /**
  * In-process registry used by the playback service. Media items are added to the ExoPlayer playlist
@@ -174,6 +182,14 @@ private class ManyDriveMediaDataSource : BaseDataSource(false) {
         override fun createDataSource(): DataSource = ManyDriveMediaDataSource()
     }
 }
+
+/** A silent ExoPlayer shell for a direct pager neighbor. Callers keep it unprepared/frozen until selected. */
+@OptIn(UnstableApi::class)
+internal fun createMediaPagePlayer(context: android.content.Context): ExoPlayer = ExoPlayer.Builder(context)
+    .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(context, ManyDriveMediaDataSource.Factory())))
+    .setLoadControl(androidx.media3.exoplayer.DefaultLoadControl.Builder()
+        .setBufferDurationsMs(1000, 5000, 250, 500).build())
+    .build().apply { volume = 0f; playWhenReady = false }
 
 /** Stable account/file IDs keep resume positions independent of playlist order. */
 internal object PlaybackProgress {

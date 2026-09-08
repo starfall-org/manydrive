@@ -5,6 +5,7 @@ import com.starfall.gsadrive.ui.CopyableError
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -435,8 +436,10 @@ private fun FileListRow(
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().clickable { if (file.isFolder) onOpen(file) else onPreview(file) }
-                .padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+            Modifier.fillMaxWidth().combinedClickable(
+                onClick = { if (file.isFolder) onOpen(file) else onPreview(file) },
+                onLongClick = { onMenu(file) }
+            ).padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (shared) {
@@ -483,7 +486,10 @@ private fun FileGridCard(
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().clickable { if (file.isFolder) onOpen(file) else onPreview(file) }
+        modifier = Modifier.fillMaxWidth().combinedClickable(
+            onClick = { if (file.isFolder) onOpen(file) else onPreview(file) },
+            onLongClick = { onMenu(file) }
+        )
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

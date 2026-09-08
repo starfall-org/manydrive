@@ -92,6 +92,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -138,6 +139,13 @@ private const val DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 private const val PHOTOS_SCOPE = "https://www.googleapis.com/auth/photoslibrary.appendonly"
 
 class MainActivity : ComponentActivity() {
+    private data class BrowserRefreshTarget(
+        val accountKey: String,
+        val tab: Int,
+        val path: List<DriveFile>,
+        val requestId: Int
+    )
+
     private lateinit var accountPicker: ActivityResultLauncher<Intent>
     private lateinit var servicePicker: ActivityResultLauncher<Array<String>>
     private lateinit var resolution: ActivityResultLauncher<IntentSenderRequest>
@@ -151,6 +159,7 @@ class MainActivity : ComponentActivity() {
     private val serviceStore by lazy { ServiceAccountStore(this) }
     private val selection by lazy { getSharedPreferences("manydrive_selection", MODE_PRIVATE) }
     private val listingCache by lazy { FileListCache(File(cacheDir, "file-lists")) }
+    private val uploadNotifications by lazy { UploadNotifications(this) }
     private var themeMode by mutableStateOf(ThemeMode.SYSTEM)
     private var superDark by mutableStateOf(false)
     private var pendingUploadParent: String? = null
@@ -161,6 +170,10 @@ class MainActivity : ComponentActivity() {
     private var serviceAvailable = true
     private var accountUi by mutableStateOf(AccountUi())
     private var model by mutableStateOf(Model())
+    /** Each root browser tab owns its own listing/path state instead of sharing one Model. */
+    private val browserTabModels = mutableStateMapOf<Int, Model>()
+    private val browserRefreshIds = mutableMapOf<Int, Int>()
+    private var browserRefreshCounter = 0
     private var playback by mutableStateOf<MediaController?>(null)
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private val viewerCoordinator by lazy {
@@ -178,13 +191,18 @@ class MainActivity : ComponentActivity() {
                     controllerFuture?.get() ?: kotlin.error("Dịch vụ phát media chưa sẵn sàng.")
                 }
             },
-            requestNotificationPermission = ::ensureNotificationPermission
+            requestNotificationPermission = ::ensureNotificationPermission,
+            requestAccessToken = {
+                // A cache refresh or authorization may already be restoring this account.
+                if (!model.loading && pendingAuthorization == null) authorize()
+            }
         )
     }
     private val viewer: ViewerState? get() = viewerCoordinator.state
     private var tab by mutableIntStateOf(0)
     private var generation = 0
     private var pendingAuthorization: String? = null
+    private var pendingAuthorizationTarget: BrowserRefreshTarget? = null
     private var pendingPhotosAuthorization: String? = null
     private var pendingPhotosFile: DriveFile? = null
     private var pendingUpload: String? = null
@@ -238,14 +256,25 @@ class MainActivity : ComponentActivity() {
         }
         resolution = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
             val expected = pendingAuthorization
+            val target = pendingAuthorizationTarget
             pendingAuthorization = null
+            pendingAuthorizationTarget = null
             if (expected == null || expected != accountUi.active?.key) return@registerForActivityResult
             if (result.resultCode != RESULT_OK) {
-                error("Đã hủy cấp quyền Google.")
+                if (target != null) browserError(target, "Đã hủy cấp quyền Google.")
+                else error("Đã hủy cấp quyền Google.")
             } else {
                 runCatching { authorization.getAuthorizationResultFromIntent(result.data) }
-                    .onSuccess { it.accessToken?.let(::loadDrive) ?: error("Google không trả về access token.") }
-                    .onFailure { error("Không thể cấp quyền Google.") }
+                    .onSuccess { auth ->
+                        val token = auth.accessToken
+                        if (token != null) loadDrive(token, target)
+                        else if (target != null) browserError(target, "Google không trả về access token.")
+                        else error("Google không trả về access token.")
+                    }
+                    .onFailure {
+                        if (target != null) browserError(target, "Không thể cấp quyền Google.")
+                        else error("Không thể cấp quyền Google.")
+                    }
             }
         }
         filePicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -309,7 +338,7 @@ class MainActivity : ComponentActivity() {
                         Toast.makeText(this@MainActivity, "Đã xóa cache danh sách tệp", Toast.LENGTH_SHORT).show()
                     } },
                     viewer, ::openPreview, ::closePreview, ::updatePreviewText, ::savePreviewText, ::swipePreview,
-                    playback, ::minimizePreview, ::expandPreview
+                    playback, ::minimizePreview, ::expandPreview, browserModels = browserTabModels
                 )
             }
         }
@@ -379,8 +408,11 @@ class MainActivity : ComponentActivity() {
         if (viewer != null) closePreview()
         ++generation
         pendingAuthorization = null
+        pendingAuthorizationTarget = null
         pendingPhotosAuthorization = null
         pendingUpload = null
+        browserTabModels.clear()
+        browserRefreshIds.clear()
         tab = 0
         accountUi = accountUi.copy(active = entry, message = null)
         selection.edit().putString("active", entry.key).apply()
@@ -390,9 +422,24 @@ class MainActivity : ComponentActivity() {
 
     private fun selectTab(next: Int) {
         if (model.uploading || !isTabEnabled(accountUi.active?.type, next) || tab == next) return
-        model = model.copy(path = emptyList(), files = emptyList(), fromCache = false)
+
+        // Keep the complete state of the page we are leaving, including an in-progress refresh.
+        // Switching tabs does not invalidate its request; completion is routed back to this tab.
+        if (tab in 0..1) browserTabModels[tab] = model
+
+        val previous = model
         tab = next
-        refresh()
+        if (next in 0..1) {
+            val restored = browserTabModels[next]
+            model = restored?.copy(
+                user = restored.user ?: previous.user,
+                token = restored.token ?: previous.token
+            ) ?: Model(user = previous.user, token = previous.token)
+            if (restored == null) refresh()
+        } else {
+            model = Model(user = previous.user, token = previous.token)
+            refresh()
+        }
     }
 
     private fun searchDrive(query: String, done: (Result<List<DriveFile>>) -> Unit) {
@@ -430,7 +477,8 @@ class MainActivity : ComponentActivity() {
         refresh()
     }
 
-    private fun cacheLocation(): String = "$tab:${model.path.lastOrNull()?.id.orEmpty()}"
+    private fun cacheLocation(tabIndex: Int = tab, path: List<DriveFile> = model.path): String =
+        "$tabIndex:${path.lastOrNull()?.id.orEmpty()}"
 
     private fun cacheFiles(files: List<DriveFile>) {
         val account = accountUi.active?.key ?: return
@@ -438,23 +486,66 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) { listingCache.write(account, location, files) }
     }
 
+    private fun cacheFiles(target: BrowserRefreshTarget, files: List<DriveFile>) {
+        val location = cacheLocation(target.tab, target.path)
+        lifecycleScope.launch(Dispatchers.IO) { listingCache.write(target.accountKey, location, files) }
+    }
+
+    private fun newBrowserRefreshTarget(active: AccountEntry): BrowserRefreshTarget {
+        val requestId = ++browserRefreshCounter
+        browserRefreshIds[tab] = requestId
+        return BrowserRefreshTarget(active.key, tab, model.path, requestId)
+    }
+
+    private fun isBrowserRefreshCurrent(target: BrowserRefreshTarget): Boolean =
+        accountUi.active?.key == target.accountKey && browserRefreshIds[target.tab] == target.requestId
+
+    private fun updateBrowserTab(target: BrowserRefreshTarget, update: (Model) -> Model): Boolean {
+        if (!isBrowserRefreshCurrent(target)) return false
+        if (tab == target.tab) {
+            model = update(model)
+        } else {
+            val base = browserTabModels[target.tab]
+                ?: Model(user = accountUi.active?.name, token = model.token, path = target.path)
+            browserTabModels[target.tab] = update(base)
+        }
+        return true
+    }
+
+    private fun browserError(target: BrowserRefreshTarget, message: String) {
+        updateBrowserTab(target) { it.copy(loading = false, message = message) }
+        viewerCoordinator.onAccessTokenError(message)
+    }
+
+    /** Access tokens belong to the account, not to one tab. Keep every tab snapshot in sync. */
+    private fun propagateBrowserToken(token: String) {
+        model = model.copy(token = token)
+        browserTabModels.keys.toList().forEach { index ->
+            browserTabModels[index] = browserTabModels.getValue(index).copy(token = token)
+        }
+    }
+
     private fun refresh(forceNetwork: Boolean = false) {
         val active = accountUi.active ?: return
         if (model.uploading) return
-        val request = ++generation
-        val location = cacheLocation()
-        model = model.copy(loading = true, message = null)
+        val target = newBrowserRefreshTarget(active)
+        val location = cacheLocation(target.tab, target.path)
+        val startingToken = model.token
+        updateBrowserTab(target) { it.copy(loading = true, message = null) }
         lifecycleScope.launch {
             val cached = withContext(Dispatchers.IO) { listingCache.read(active.key, location) }
-            if (request != generation) return@launch
+            if (!isBrowserRefreshCurrent(target)) return@launch
             if (cached != null) {
-                model = model.copy(files = cached, loading = forceNetwork, fromCache = true)
-                if (!forceNetwork) return@launch
+                val needsToken = active.type != AccountType.S3 && startingToken == null
+                updateBrowserTab(target) {
+                    it.copy(files = cached, loading = forceNetwork || needsToken, fromCache = true)
+                }
+                if (!forceNetwork && !needsToken) return@launch
             }
             when (active.type) {
-                AccountType.GOOGLE -> authorize()
-                AccountType.S3 -> loadS3()
-                AccountType.SERVICE -> loadService()
+                AccountType.GOOGLE -> if (startingToken != null) loadDrive(startingToken, target) else authorize(target)
+                AccountType.S3 -> loadS3(target)
+                AccountType.SERVICE -> loadService(target)
             }
         }
     }
@@ -468,56 +559,64 @@ class MainActivity : ComponentActivity() {
         }.onFailure { accountError("Không thể mở danh sách tài khoản Google.") }
     }
 
-    private fun authorize() {
+    private fun authorize(target: BrowserRefreshTarget? = null) {
         val entry = accountUi.active ?: return
+        val refreshTarget = target ?: newBrowserRefreshTarget(entry)
         if (entry.type != AccountType.GOOGLE) return when (entry.type) {
-            AccountType.S3 -> loadS3()
-            AccountType.SERVICE -> loadService()
+            AccountType.S3 -> loadS3(refreshTarget)
+            AccountType.SERVICE -> loadService(refreshTarget)
             AccountType.GOOGLE -> Unit
         }
-        val request = ++generation
-        model = model.copy(loading = true, message = null)
+        updateBrowserTab(refreshTarget) { it.copy(loading = true, message = null) }
         val scopes = listOf(Scope(DRIVE_SCOPE))
         authorization.authorize(AuthorizationRequest.builder().setAccount(Account(entry.id, "com.google"))
             .setRequestedScopes(scopes).build())
             .addOnSuccessListener { result ->
-                if (request != generation) return@addOnSuccessListener
+                if (!isBrowserRefreshCurrent(refreshTarget)) return@addOnSuccessListener
                 when {
                     result.hasResolution() -> {
                         pendingAuthorization = entry.key
+                        pendingAuthorizationTarget = refreshTarget
                         result.pendingIntent?.let {
                             resolution.launch(IntentSenderRequest.Builder(it.intentSender).build())
-                        } ?: error("Không thể mở cấp quyền.")
+                        } ?: browserError(refreshTarget, "Không thể mở cấp quyền.")
                     }
-                    result.accessToken != null -> loadDrive(result.accessToken!!)
-                    else -> error("Google không trả về quyền Drive.")
+                    result.accessToken != null -> loadDrive(result.accessToken!!, refreshTarget)
+                    else -> browserError(refreshTarget, "Google không trả về quyền Drive.")
                 }
-            }.addOnFailureListener { if (request == generation) error("Không thể cấp quyền Google.") }
+            }.addOnFailureListener {
+                if (isBrowserRefreshCurrent(refreshTarget)) browserError(refreshTarget, "Không thể cấp quyền Google.")
+            }
     }
 
-    private fun loadDrive(token: String) {
+    private fun loadDrive(token: String, target: BrowserRefreshTarget? = null) {
+        val active = accountUi.active ?: return
+        val refreshTarget = target ?: newBrowserRefreshTarget(active)
         refreshAccountName(token)
-        val request = ++generation
-        val selectedTab = tab
-        val parentId = model.path.lastOrNull()?.id
-        model = model.copy(loading = true, message = null, token = token)
+        val parentId = refreshTarget.path.lastOrNull()?.id
+        if (isBrowserRefreshCurrent(refreshTarget)) propagateBrowserToken(token)
+        updateBrowserTab(refreshTarget) { it.copy(loading = true, message = null, token = token) }
+        viewerCoordinator.onAccessTokenAvailable()
         lifecycleScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    DriveApi.listFiles(token, sharedWithMe = selectedTab == 1 && parentId == null, parentId = parentId, trashed = selectedTab == 3)
+                    DriveApi.listFiles(
+                        token,
+                        sharedWithMe = refreshTarget.tab == 1 && parentId == null,
+                        parentId = parentId,
+                        trashed = refreshTarget.tab == 3
+                    )
                 }
             }.onSuccess { files ->
-                if (request == generation) {
-                    model = model.copy(files = files, loading = false, fromCache = false)
-                    cacheFiles(files)
+                if (updateBrowserTab(refreshTarget) { it.copy(files = files, loading = false, fromCache = false) }) {
+                    cacheFiles(refreshTarget, files)
                 }
             }.onFailure { failure ->
                 if (failure is kotlinx.coroutines.CancellationException) throw failure
-                if (request == generation) {
+                if (isBrowserRefreshCurrent(refreshTarget)) {
                     val diagnostic = driveLoadError(failure)
-                    // Do not log exception messages: SDK HTTP errors may contain request URLs/bodies.
                     android.util.Log.e("ManyDrive", diagnostic + "\n" + failure.stackTrace.take(12).joinToString("\n"))
-                    error(diagnostic)
+                    browserError(refreshTarget, diagnostic)
                 }
             }
         }
@@ -558,14 +657,19 @@ class MainActivity : ComponentActivity() {
 
     private fun startPhotosUpload(file: DriveFile, photosToken: String) {
         if (model.uploading) return
+        ensureNotificationPermission()
         val source = accountUi.active ?: return
         val driveToken = model.token
         val s3 = s3Accounts.accounts.firstOrNull { it.id == source.id }?.config
         pendingPhotosFile = null
-        model = model.copy(uploading = true, message = "Đang chuẩn bị tải lên Google Photos…")
+        model = model.copy(uploading = true, message = null)
+        val total = if (file.isFolder) null else 1
+        uploadNotifications.running(UploadNotifications.Kind.PHOTOS, completed = 0, failed = 0, total = total)
         lifecycleScope.launch {
             var uploaded = 0
             var failed = 0
+            var cancelled = false
+            var fatal: Throwable? = null
             try {
                 withContext(Dispatchers.IO) {
                     val album = if (file.isFolder) PhotosApi.createAlbum(photosToken, file.name) else null
@@ -581,9 +685,13 @@ class MainActivity : ComponentActivity() {
                             continue
                         }
                         if (!item.mimeType.startsWith("image/") && !item.mimeType.startsWith("video/")) continue
-                        withContext(Dispatchers.Main) {
-                            model = model.copy(message = "Google Photos: đã tải $uploaded, lỗi $failed. Đang tải ${item.name}…")
-                        }
+                        uploadNotifications.running(
+                            UploadNotifications.Kind.PHOTOS,
+                            currentName = item.name,
+                            completed = uploaded,
+                            failed = failed,
+                            total = total
+                        )
                         val temporary = File.createTempFile("photos-upload-", ".tmp", cacheDir)
                         try {
                             if (source.type == AccountType.S3) S3Api.downloadTo(requireNotNull(s3), item.id, temporary)
@@ -592,45 +700,81 @@ class MainActivity : ComponentActivity() {
                             uploaded++
                         } catch (e: kotlinx.coroutines.CancellationException) {
                             throw e
-                        } catch (e: Exception) {
+                        } catch (_: Exception) {
                             failed++
                         } finally {
                             temporary.delete()
                         }
+                        uploadNotifications.running(
+                            UploadNotifications.Kind.PHOTOS,
+                            completed = uploaded,
+                            failed = failed,
+                            total = total
+                        )
                     }
                 }
-                model = model.copy(message = "Google Photos: đã tải $uploaded tệp, lỗi $failed tệp." +
-                    if (file.isFolder) " Album: ${file.name}." else "")
             } catch (e: kotlinx.coroutines.CancellationException) {
+                cancelled = true
                 throw e
             } catch (e: Exception) {
-                model = model.copy(message = "Không thể hoàn tất tải lên Google Photos. Đã tải $uploaded tệp, lỗi $failed tệp.")
+                fatal = e
             } finally {
                 model = model.copy(uploading = false)
+                when {
+                    cancelled -> uploadNotifications.finished(
+                        UploadNotifications.Kind.PHOTOS,
+                        "Đã hủy tải lên Google Photos. Đã tải $uploaded tệp, lỗi $failed tệp.",
+                        success = false
+                    )
+                    fatal != null -> uploadNotifications.finished(
+                        UploadNotifications.Kind.PHOTOS,
+                        "Không thể hoàn tất tải lên Google Photos. Đã tải $uploaded tệp, lỗi $failed tệp.",
+                        success = false
+                    )
+                    else -> uploadNotifications.finished(
+                        UploadNotifications.Kind.PHOTOS,
+                        "Đã tải $uploaded tệp lên Google Photos" +
+                            (if (failed > 0) ", lỗi $failed tệp" else "") +
+                            (if (file.isFolder) ". Album: ${file.name}." else "."),
+                        success = failed == 0
+                    )
+                }
             }
         }
     }
 
-    private fun loadS3() {
-        val account = s3Accounts.accounts.find { it.id == accountUi.active?.id } ?: return
-        val request = ++generation
-        val prefix = model.path.lastOrNull()?.id.orEmpty()
-        model = model.copy(user = account.name, loading = true, message = null)
+    private fun loadS3(target: BrowserRefreshTarget? = null) {
+        val entry = accountUi.active ?: return
+        val refreshTarget = target ?: newBrowserRefreshTarget(entry)
+        val account = s3Accounts.accounts.find { it.id == entry.id } ?: return
+        val prefix = refreshTarget.path.lastOrNull()?.id.orEmpty()
+        updateBrowserTab(refreshTarget) { it.copy(user = account.name, loading = true, message = null) }
         lifecycleScope.launch {
             runCatching { withContext(Dispatchers.IO) { S3Api.list(account.config, prefix) } }
-                .onSuccess { if (request == generation) { model = model.copy(files = it, loading = false, fromCache = false); cacheFiles(it) } }
-                .onFailure { if (request == generation) error("Không thể kết nối S3. Kiểm tra quyền bucket và mạng rồi thử làm mới.") }
+                .onSuccess { files ->
+                    if (updateBrowserTab(refreshTarget) { it.copy(files = files, loading = false, fromCache = false) }) {
+                        cacheFiles(refreshTarget, files)
+                    }
+                }
+                .onFailure {
+                    if (isBrowserRefreshCurrent(refreshTarget)) {
+                        browserError(refreshTarget, "Không thể kết nối S3. Kiểm tra quyền bucket và mạng rồi thử làm mới.")
+                    }
+                }
         }
     }
 
-    private fun loadService() {
-        val account = serviceAccounts.find { it.id == accountUi.active?.id } ?: return
-        val request = ++generation
-        val parentId = model.path.lastOrNull()?.id
-        val shared = tab == 1 && parentId == null
-        val trashed = tab == 3
+    private fun loadService(target: BrowserRefreshTarget? = null) {
+        val entry = accountUi.active ?: return
+        val refreshTarget = target ?: newBrowserRefreshTarget(entry)
+        val account = serviceAccounts.find { it.id == entry.id } ?: return
+        val parentId = refreshTarget.path.lastOrNull()?.id
+        val shared = refreshTarget.tab == 1 && parentId == null
+        val trashed = refreshTarget.tab == 3
         val cached = serviceTokens[account.id]?.takeIf { it.validAt(System.currentTimeMillis() / 1000) }
-        model = model.copy(user = storedAccountName(AccountType.SERVICE, account.email), loading = true, message = null)
+        updateBrowserTab(refreshTarget) {
+            it.copy(user = storedAccountName(AccountType.SERVICE, account.email), loading = true, message = null)
+        }
         lifecycleScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -638,16 +782,22 @@ class MainActivity : ComponentActivity() {
                     token to DriveApi.listFiles(token.value, sharedWithMe = shared, parentId = parentId, trashed = trashed)
                 }
             }.onSuccess { (token, files) ->
-                if (request == generation) {
+                if (isBrowserRefreshCurrent(refreshTarget)) {
                     serviceTokens[account.id] = token
                     refreshAccountName(token.value)
-                    model = model.copy(token = token.value, files = files, loading = false, fromCache = false)
-                    cacheFiles(files)
+                    propagateBrowserToken(token.value)
+                    if (updateBrowserTab(refreshTarget) {
+                            it.copy(token = token.value, files = files, loading = false, fromCache = false)
+                        }) {
+                        viewerCoordinator.onAccessTokenAvailable()
+                        cacheFiles(refreshTarget, files)
+                    }
                 }
             }.onFailure {
-                if (request == generation) {
+                if (isBrowserRefreshCurrent(refreshTarget)) {
                     serviceTokens.remove(account.id)
-                    error("Không thể tải Drive của Service Account. Kiểm tra khóa, Drive API và quyền chia sẻ rồi thử làm mới.")
+                    browserError(refreshTarget,
+                        "Không thể tải Drive của Service Account. Kiểm tra khóa, Drive API và quyền chia sẻ rồi thử làm mới.")
                 }
             }
         }
@@ -711,8 +861,11 @@ class MainActivity : ComponentActivity() {
     private fun finishAdding(entry: AccountEntry, files: List<DriveFile>, token: String? = null) {
         ++generation
         pendingAuthorization = null
+        pendingAuthorizationTarget = null
         pendingPhotosAuthorization = null
         pendingUpload = null
+        browserTabModels.clear()
+        browserRefreshIds.clear()
         tab = 0
         selection.edit().putString("active", entry.key).apply()
         accountUi = accountUi.copy(active = entry, busy = false, message = null, revision = accountUi.revision + 1)
@@ -771,51 +924,87 @@ class MainActivity : ComponentActivity() {
 
     private fun upload(uris: List<Uri>, tree: Uri? = null, parent: String? = null) {
         if ((uris.isEmpty() && tree == null) || model.uploading) return
+        ensureNotificationPermission()
         val account = accountUi.active ?: return
         val s3 = s3Accounts.accounts.find { it.id == account.id }?.config
         val service = serviceAccounts.find { it.id == account.id }
         val existingToken = model.token
-        val request = ++generation
-        model = model.copy(loading = true, uploading = true, message = "Đang chuẩn bị tải lên…")
+        model = model.copy(uploading = true, message = null)
+        val total = if (tree == null) uris.size else null
+        uploadNotifications.running(UploadNotifications.Kind.DRIVE, completed = 0, total = total)
         lifecycleScope.launch {
             var completed = 0
-            val result = runCatching { withContext(Dispatchers.IO) {
-                val token = if (account.type == AccountType.SERVICE) ServiceAccountApi.accessToken(requireNotNull(service)).value
-                    else existingToken
-                val uploader = DocumentUploads(contentResolver,
-                    createFolder = { name, destination ->
-                        if (account.type == AccountType.S3) {
-                            val key = destination.orEmpty() + name + "/"
-                            S3Api.createFolder(requireNotNull(s3), key)
-                            key
-                        } else DriveApi.createFolder(requireNotNull(token) { "Hãy cấp quyền Drive trước khi tải lên." }, name, destination)
-                    },
-                    uploadFile = { uri, name, mime, destination ->
-                        withContext(Dispatchers.Main) {
-                            if (request == generation) model = model.copy(message = "Đang tải: $name · Đã xong $completed tệp")
-                        }
-                        contentResolver.openInputStream(uri)?.use { input ->
+            var currentName: String? = null
+            var cancelled = false
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val token = if (account.type == AccountType.SERVICE) ServiceAccountApi.accessToken(requireNotNull(service)).value
+                        else existingToken
+                    val uploader = DocumentUploads(
+                        contentResolver,
+                        createFolder = { name, destination ->
                             if (account.type == AccountType.S3) {
-                                val temporary = File.createTempFile("upload-", ".tmp", cacheDir)
-                                try {
-                                    temporary.outputStream().use { input.copyTo(it, 64 * 1024) }
-                                    S3Api.upload(requireNotNull(s3), destination.orEmpty() + name, mime, temporary)
-                                } finally { temporary.delete() }
-                            } else DriveApi.upload(requireNotNull(token), name, mime, input, destination)
-                        } ?: kotlin.error("Không đọc được tệp $name.")
-                        completed++
-                    })
-                if (tree != null) uploader.tree(tree, parent) else uploader.files(uris, parent)
-            } }
-            withContext(Dispatchers.IO) { listingCache.clear(account.key) }
-            result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
-            if (request == generation) {
-                model = model.copy(loading = false, uploading = false, fromCache = false)
-                val message = if (result.isSuccess) "Đã tải lên $completed tệp." else
-                    "Đã tải $completed tệp; tải lên bị dừng. Kiểm tra quyền ghi, dung lượng và kết nối. Các tệp đã tải được giữ lại."
-                Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
-                refresh(forceNetwork = true)
+                                val key = destination.orEmpty() + name + "/"
+                                S3Api.createFolder(requireNotNull(s3), key)
+                                key
+                            } else DriveApi.createFolder(
+                                requireNotNull(token) { "Hãy cấp quyền Drive trước khi tải lên." },
+                                name,
+                                destination
+                            )
+                        },
+                        uploadFile = { uri, name, mime, destination ->
+                            currentName = name
+                            uploadNotifications.running(
+                                UploadNotifications.Kind.DRIVE,
+                                currentName = name,
+                                completed = completed,
+                                total = total
+                            )
+                            contentResolver.openInputStream(uri)?.use { input ->
+                                if (account.type == AccountType.S3) {
+                                    val temporary = File.createTempFile("upload-", ".tmp", cacheDir)
+                                    try {
+                                        temporary.outputStream().use { input.copyTo(it, 64 * 1024) }
+                                        S3Api.upload(requireNotNull(s3), destination.orEmpty() + name, mime, temporary)
+                                    } finally {
+                                        temporary.delete()
+                                    }
+                                } else DriveApi.upload(requireNotNull(token), name, mime, input, destination)
+                            } ?: kotlin.error("Không đọc được tệp $name.")
+                            completed++
+                            uploadNotifications.running(
+                                UploadNotifications.Kind.DRIVE,
+                                completed = completed,
+                                total = total
+                            )
+                        }
+                    )
+                    if (tree != null) uploader.tree(tree, parent) else uploader.files(uris, parent)
+                }
             }
+            result.exceptionOrNull()?.let { if (it is CancellationException) cancelled = true }
+            withContext(Dispatchers.IO) { listingCache.clear(account.key) }
+            model = model.copy(uploading = false, fromCache = false)
+            when {
+                cancelled -> uploadNotifications.finished(
+                    UploadNotifications.Kind.DRIVE,
+                    "Đã hủy tải lên. Đã hoàn tất $completed tệp.",
+                    success = false
+                )
+                result.isSuccess -> uploadNotifications.finished(
+                    UploadNotifications.Kind.DRIVE,
+                    "Đã tải lên $completed tệp.",
+                    success = true
+                )
+                else -> uploadNotifications.finished(
+                    UploadNotifications.Kind.DRIVE,
+                    "Tải lên bị dừng tại ${currentName ?: "một tệp"}. Đã hoàn tất $completed tệp.",
+                    success = false
+                )
+            }
+            if (cancelled) throw result.exceptionOrNull() as CancellationException
+            refresh(forceNetwork = true)
         }
     }
 
@@ -950,16 +1139,22 @@ class MainActivity : ComponentActivity() {
         accountUi.active?.key?.let { key -> lifecycleScope.launch(Dispatchers.IO) { listingCache.clear(key) } }
         ++generation
         pendingAuthorization = null
+        pendingAuthorizationTarget = null
         pendingPhotosAuthorization = null
         pendingUpload = null
         serviceTokens.clear()
         googleStore.clearActive()
         selection.edit().putString("active", "").apply()
         accountUi = accountUi.copy(active = null)
+        browserTabModels.clear()
+        browserRefreshIds.clear()
         tab = 0
         model = Model(message = "Đã đăng xuất.")
     }
 
     private fun accountError(message: String) { accountUi = accountUi.copy(busy = false, message = message) }
-    private fun error(message: String) { model = model.copy(loading = false, message = message) }
+    private fun error(message: String) {
+        model = model.copy(loading = false, message = message)
+        viewerCoordinator.onAccessTokenError(message)
+    }
 }
