@@ -37,7 +37,7 @@ workflows:
           : "${CM_KEY_ALIAS:?Missing key alias}"
           : "${CM_KEY_PASSWORD:?Missing key password}"
           test -f "$CM_KEYSTORE_PATH"
-      - name: Build release APK and AAB
+      - name: Build ABI-specific release APKs and AAB
         script: |
           chmod +x gradlew
           ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace
