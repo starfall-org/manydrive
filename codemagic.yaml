@@ -24,7 +24,7 @@ workflows:
       java: 17
       android_signing:
         # Must match the Reference name in Codemagic's Android keystores tab.
-        - manydrive_release
+        - ManyDrive
     scripts:
       - name: Set up Android SDK
         script: |
