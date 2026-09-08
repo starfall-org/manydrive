@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ManyDrive — Your Secure Drive File Manager</title>
     <meta name="description" content="ManyDrive is a native Android file manager for Google Drive, S3, and Google Service Accounts. Browse, upload, and manage your files securely on the go.">
+    <meta property="og:title" content="ManyDrive — Your Secure Drive File Manager">
+    <meta property="og:description" content="A native Android file manager for Google Drive, S3 buckets, and Google Service Accounts.">
+    <meta property="og:type" content="website">
     <style>
         :root {
             --bg: #0b1020;
@@ -41,15 +44,16 @@
         }
 
         .logo { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 20px; }
-        .logo .mark {
-            width: 36px; height: 36px; border-radius: 10px;
-            background: linear-gradient(135deg, var(--accent), var(--accent-2));
-            display: flex; align-items: center; justify-content: center;
-            font-size: 18px; color: #0b1020; font-weight: 800;
-        }
+        .logo .mark { width: 36px; height: 36px; display: block; flex-shrink: 0; }
 
         .nav a { margin-left: 20px; color: var(--muted); font-size: 15px; }
-        .nav a:hover { color: var(--text); text-decoration: none; }
+            .nav a:hover { color: var(--text); text-decoration: none; }
+            .github-icon {
+                display: inline-flex; align-items: center; gap: 7px;
+                color: var(--text); opacity: 0.8; transition: opacity .15s ease;
+            }
+            .github-icon:hover { opacity: 1; text-decoration: none; }
+            .github-icon svg { width: 18px; height: 18px; }
 
         .hero {
             text-align: center;
@@ -107,6 +111,44 @@
         .tile h4 { margin-bottom: 6px; }
         .tile p { color: var(--muted); font-size: 14px; }
 
+        .privacy {
+            padding: 80px 0;
+        }
+        .two-col {
+            display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: center;
+        }
+        .privacy h2, .support h2 { font-size: 28px; margin-bottom: 8px; }
+        .privacy .sub, .support .sub { color: var(--muted); margin-bottom: 28px; }
+        .privacy .sub strong, .support .sub strong { color: var(--text); }
+        .stat {
+            display: flex; gap: 16px; align-items: flex-start;
+            background: var(--card); border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 16px; padding: 20px; margin-bottom: 16px;
+        }
+        .stat .icon {
+            width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+            background: rgba(79,140,255,0.18); display: flex; align-items: center; justify-content: center; font-size: 20px;
+        }
+        .stat h4 { font-size: 16px; margin-bottom: 4px; }
+        .stat p { color: var(--muted); font-size: 14px; }
+
+        .support {
+            background: var(--bg-soft); border-top: 1px solid rgba(255,255,255,0.07);
+            padding: 60px 0 80px; text-align: center;
+        }
+        .support .sub { max-width: 560px; margin-left: auto; margin-right: auto; }
+        .contact-cards {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px; max-width: 640px; margin: 0 auto;
+        }
+        .contact {
+            background: var(--card); border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 16px; padding: 24px;
+        }
+        .contact .icon { font-size: 22px; margin-bottom: 10px; }
+        .contact h4 { font-size: 15px; margin-bottom: 6px; }
+        .contact a { font-size: 15px; word-break: break-all; }
+
         footer {
             padding: 40px 0; color: var(--muted); text-align: center;
             border-top: 1px solid rgba(255,255,255,0.06); font-size: 14px;
@@ -117,20 +159,28 @@
         @media (max-width: 640px) {
             .nav { display: none; }
             .hero { padding-top: 60px; }
+            .two-col { grid-template-columns: 1fr; gap: 32px; }
         }
     </style>
+    <link rel="icon" type="image/svg+xml" href="/brand/manydrive-logo.svg">
 </head>
 <body>
     <header>
         <div class="logo">
-            <div class="mark">M</div>
+            <img class="mark" src="/brand/manydrive-logo.svg" width="36" height="36" alt="" aria-hidden="true">
             <span>ManyDrive</span>
         </div>
         <nav class="nav">
             <a href="#features">Features</a>
             <a href="#providers">Providers</a>
-            <a href="privacy">Privacy</a>
-            <a href="tos">Terms</a>
+            <a href="#privacy">Privacy</a>
+            <a href="#support">Support</a>
+            <a href="privacy.html">Privacy Policy</a>
+            <a href="tos.html">Terms</a>
+            <a class="github-icon" href="https://github.com/starfall-org/manydrive" target="_blank" rel="noopener" aria-label="GitHub repository">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55v-2.17c-3.2.7-3.87-1.36-3.87-1.36-.53-1.33-1.28-1.69-1.28-1.69-1.04-.72.08-.7.08-.7 1.16.08 1.77 1.18 1.77 1.18 1.02 1.75 2.67 1.25 3.33.96.1-.75.4-1.25.72-1.54-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.21-1.49 3.18-1.18 3.18-1.18.62 1.59.23 2.76.11 3.05.73.81 1.18 1.83 1.18 3.09 0 4.43-2.7 5.41-5.27 5.69.41.36.77 1.06.77 2.14v3.19c0 .3.21.67.8.55A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+                GitHub
+            </a>
         </nav>
     </header>
 
@@ -140,7 +190,7 @@
         <p>A native Android file manager that connects Google Drive, S3 buckets, and Google Service Accounts — all in one clean, Compose-built interface.</p>
         <div class="cta">
             <a class="btn btn-primary" href="#features">Explore Features</a>
-            <a class="btn btn-secondary" href="privacy">Privacy Policy</a>
+            <a class="btn btn-secondary" href="privacy.html">Privacy Policy</a>
         </div>
     </section>
 
@@ -200,12 +250,64 @@
         </div>
     </section>
 
+    <section class="privacy" id="privacy">
+        <div class="container two-col">
+            <div class="left">
+                <h2>Your Data, Your Choice</h2>
+                <p class="sub">We built ManyDrive around a simple principle: <strong>your files are yours.</strong> The app operates on your device, and your connected credentials are encrypted and stored on your own device.</p>
+                <a class="btn btn-secondary" href="privacy.html">Read the Full Privacy Policy</a>
+            </div>
+            <div class="right">
+                <div class="stat">
+                    <div class="icon">🔐</div>
+                    <div>
+                        <h4>On-Device Encryption</h4>
+                        <p>Access keys and imported keys are encrypted with AES-GCM using Android Keystore on your device.</p>
+                    </div>
+                </div>
+                <div class="stat">
+                    <div class="icon">🚫</div>
+                    <div>
+                        <h4>No Tracking</h4>
+                        <p>ManyDrive does not sell, rent, or share your personal data, and does not use advertising SDKs.</p>
+                    </div>
+                </div>
+                <div class="stat">
+                    <div class="icon">🗑️</div>
+                    <div>
+                        <h4>Full Deletion</h4>
+                        <p>Remove an account to delete its saved credentials locally — and request data deletion from us at any time.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="support" id="support">
+        <div class="container">
+            <h2>Need Help?</h2>
+            <p class="sub">We're happy to answer questions about privacy, permissions, or how the app works.</p>
+            <div class="contact-cards">
+                <div class="contact">
+                    <div class="icon">📧</div>
+                    <h4>Support &amp; Privacy</h4>
+                    <a href="mailto:nptvscode@gmail.com">nptvscode@gmail.com</a>
+                </div>
+                <div class="contact">
+                    <div class="icon">⚖️</div>
+                    <h4>Legal &amp; Terms</h4>
+                    <a href="mailto:nptvscode@gmail.com">nptvscode@gmail.com</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <footer>
-        <div>© <span id="year"></span> ManyDrive. All rights reserved.</div>
+        <div>© <span id="year"></span> ManyDrive by Starfall. All rights reserved.</div>
         <div class="links">
-            <a href="privacy">Privacy Policy</a>
-            <a href="tos">Terms of Service</a>
-            <a href="404.html">404</a>
+            <a href="privacy.html">Privacy Policy</a>
+            <a href="data-deletion.html">Data Deletion</a>
+            <a href="tos.html">Terms of Service</a>
         </div>
     </footer>
 

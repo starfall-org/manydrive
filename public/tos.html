@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Terms of Service · ManyDrive</title>
+    <meta name="description" content="Terms of Service for ManyDrive, a native Android file manager for Google Drive, S3 buckets, and Google Service Accounts.">
     <style>
         :root {
             --bg: #0b1020;
@@ -30,7 +31,7 @@
 
         header {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 22px 24px; max-width: 860px; margin: 0 auto;
+            padding: 22px 24px; max-width: 900px; margin: 0 auto;
         }
         .logo { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 20px; }
         .logo .mark {
@@ -40,8 +41,10 @@
             font-size: 18px; color: #0b1020; font-weight: 800;
         }
         .logo a { color: var(--text); text-decoration: none; }
+        .topnav a { margin-left: 20px; color: var(--muted); font-size: 15px; }
+        .topnav a:hover { color: var(--text); text-decoration: none; }
 
-        main { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+        main { max-width: 900px; margin: 0 auto; padding: 40px 24px 80px; }
 
         .page-head { margin-bottom: 44px; }
         .page-head h1 {
@@ -51,6 +54,23 @@
             margin-bottom: 12px;
         }
         .page-head p { color: var(--muted); }
+
+        .meta {
+            display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px;
+        }
+        .meta span {
+            font-size: 13px; padding: 6px 12px; border-radius: 999px;
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+            color: var(--muted);
+        }
+
+        .toc {
+            background: rgba(79,140,255,0.08); border: 1px solid rgba(79,140,255,0.2);
+            border-radius: 12px; padding: 18px 22px; margin-bottom: 36px; font-size: 14.5px;
+        }
+        .toc strong { color: var(--text); display: block; margin-bottom: 8px; }
+        .toc ol { padding-left: 20px; color: var(--muted); }
+        .toc li { margin-bottom: 4px; }
 
         .content {
             background: var(--bg-soft); border: 1px solid rgba(255,255,255,0.07);
@@ -65,6 +85,7 @@
         .content p { color: var(--muted); margin-bottom: 12px; }
         .content ul { color: var(--muted); padding-left: 22px; margin-bottom: 12px; }
         .content li { margin-bottom: 6px; }
+        .content strong { color: var(--text); }
 
         .back { margin-top: 40px; }
         .back a {
@@ -78,8 +99,10 @@
             padding: 40px 0; border-top: 1px solid rgba(255,255,255,0.06);
             color: var(--muted); text-align: center; font-size: 14px;
         }
+        footer a { margin: 0 10px; }
 
         @media (max-width: 640px) {
+            .topnav { display: none; }
             .content { padding: 24px; }
         }
     </style>
@@ -88,45 +111,102 @@
     <header>
         <div class="logo">
             <div class="mark">M</div>
-            <a href="./">ManyDrive</a>
+            <a href="index.html">ManyDrive</a>
         </div>
+        <nav class="topnav">
+            <a href="index.html">Home</a>
+            <a href="privacy.html">Privacy</a>
+            <a href="data-deletion.html">Data Deletion</a>
+        </nav>
     </header>
 
     <main>
         <div class="page-head">
             <h1>Terms of Service</h1>
             <p>Last updated: September 8, 2026</p>
+            <div class="meta">
+                <span>Developer: ManyDrive (Starfall)</span>
+                <span>Contact: nptvscode@gmail.com</span>
+            </div>
         </div>
+
+        <nav class="toc">
+            <strong>Contents</strong>
+            <ol>
+                <li><a href="#acceptance">Acceptance of Terms</a></li>
+                <li><a href="#description">Description of Service</a></li>
+                <li><a href="#accounts">Your Accounts &amp; Third-Party Services</a></li>
+                <li><a href="#license">License &amp; Acceptable Use</a></li>
+                <li><a href="#ip">Intellectual Property</a></li>
+                <li><a href="#disclaimer">Disclaimer of Warranties</a></li>
+                <li><a href="#liability">Limitation of Liability</a></li>
+                <li><a href="#termination">Termination</a></li>
+                <li><a href="#governing">Governing Law</a></li>
+                <li><a href="#contact">Contact Information</a></li>
+            </ol>
+        </nav>
 
         <div class="content">
-            <p>Welcome to ManyDrive. By accessing or using our application, you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our services.</p>
+            <p>Welcome to ManyDrive. By accessing or using the ManyDrive application ("the App"), or any related website, you agree to be bound by these Terms of Service ("Terms"). Please read them carefully before using our services. If you do not agree to these terms, please do not use the App.</p>
 
-            <h2>1. Acceptance of Terms</h2>
-            <p>By using ManyDrive, you acknowledge that you have read, understood, and agreed to these terms.</p>
+            <h2 id="acceptance">1. Acceptance of Terms</h2>
+            <p>By downloading, installing, or using the App, you acknowledge that you have read, understood, and agreed to be bound by these Terms and by our <a href="privacy.html">Privacy Policy</a>. If you use the App on behalf of an organization, you represent that you have authority to bind that organization to these Terms.</p>
 
-            <h2>2. User Responsibilities</h2>
-            <p>You are responsible for maintaining the confidentiality of your account information and for all activities that occur under your account. You agree not to use the app for any illegal or unauthorized purpose.</p>
+            <h2 id="description">2. Description of Service</h2>
+            <p>The App is a file-management tool that lets you browse, upload, download, and manage files in cloud storage accounts you connect, including <strong>Google Drive</strong>, <strong>Amazon S3 or any S3-compatible endpoint</strong>, and <strong>Google Service Accounts</strong>. The App also allows uploading media to Google Photos. The App is provided "as is" and is not affiliated with or endorsed by Google, Amazon, or any other provider whose services you connect to.</p>
 
-            <h2>3. Intellectual Property</h2>
-            <p>All content, features, and functionality of ManyDrive are the exclusive property of ManyDrive and its licensors.</p>
+            <h2 id="accounts">3. Your Accounts &amp; Third-Party Services</h2>
+            <p>The App relies on accounts and authentication that you provide:</p>
+            <ul>
+                <li>You may connect a Google account, S3 endpoint, or Google Service Account to use the App's features.</li>
+                <li>You are solely responsible for the security and use of your own account credentials, and for complying with the terms of service of each third-party provider.</li>
+                <li>You authorize the App to access your connected accounts only to the extent needed to provide the requested file-management functions. The App does not assume ownership of your files.</li>
+                <li>You consent to allow the App to access, transfer, store, and display the data in the accounts you connect, as requested by you.</li>
+            </ul>
 
-            <h2>4. Limitation of Liability</h2>
-            <p>ManyDrive is provided "as is" without warranties of any kind. We are not liable for any damages arising out of your use of the application.</p>
+            <h2 id="license">4. License &amp; Acceptable Use</h2>
+            <p>We grant you a non-exclusive, non-transferable, revocable license to use the App for personal, non-commercial purposes, subject to these Terms. You agree not to:</p>
+            <ul>
+                <li>Use the App for any unlawful or unauthorized purpose, or in violation of any applicable laws or regulations.</li>
+                <li>Attempt to reverse engineer, decompile, disassemble, or otherwise derive the source code of the App.</li>
+                <li>Use the App to distribute malware, spam, or harmful content.</li>
+                <li>Interfere with or disrupt the App's operation or the connected third-party services.</li>
+                <li>Violate the terms of service, policies, or applicable laws of any third-party provider you connect.</li>
+            </ul>
 
-            <h2>5. Termination</h2>
-            <p>We reserve the right to terminate or suspend your access to the app at any time, without prior notice, for any violation of these terms.</p>
+            <h2 id="ip">5. Intellectual Property</h2>
+            <p>The App, including its code, design, logos, and all related intellectual property, is owned by ManyDrive (Starfall) and its licensors and is protected by applicable intellectual property laws. Your content and files remain yours, and nothing in these Terms transfers ownership of your content to us.</p>
 
-            <h2>6. Governing Law</h2>
-            <p>These terms are governed by the laws of the jurisdiction in which ManyDrive operates.</p>
+            <h2 id="disclaimer">6. Disclaimer of Warranties</h2>
+            <p>The App is provided <strong>"as is"</strong> and <strong>"as available"</strong>, without warranties of any kind, whether express or implied, including but not limited to implied warranties of merchantability, fitness for a particular purpose, non-infringement, or accuracy. We do not warrant that the App will be uninterrupted, error-free, or secure. Third-party services are provided by their respective owners and we are not responsible for them.</p>
 
-            <h2>7. Contact Information</h2>
-            <p>If you have any questions about these Terms, please contact us at <a href="mailto:support@manydrive.com">support@manydrive.com</a>.</p>
+            <h2 id="liability">7. Limitation of Liability</h2>
+            <p>To the maximum extent permitted by law, ManyDrive (Starfall), its directors, employees, and agents shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or for any loss of profits, revenue, data, or goodwill, arising out of or in connection with your use of, or inability to use, the App or any third-party service. Our total liability shall not exceed, in the aggregate, the amount you paid, if any, for use of the App.</p>
+
+            <h2 id="termination">8. Termination</h2>
+            <p>You may stop using the App at any time by uninstalling it. We reserve the right to suspend or terminate your access to the App, in whole or in part, at any time and without prior notice, if you violate these Terms or applicable law. Upon termination, your rights under these Terms cease, but any provisions that by their nature should survive will survive, including disclaimers and limitation of liability.</p>
+
+            <h2 id="governing">9. Governing Law</h2>
+            <p>These Terms are governed by and construed in accordance with the applicable laws of the jurisdiction in which the developer operates, without regard to its conflict-of-law principles. Any disputes shall be subject to the exclusive jurisdiction of the competent courts in that jurisdiction.</p>
+
+            <h2 id="contact">10. Contact Information</h2>
+            <p>If you have any questions about these Terms, please contact us at:</p>
+            <ul>
+                <li>Email: <a href="mailto:nptvscode@gmail.com">nptvscode@gmail.com</a></li>
+            </ul>
         </div>
 
-        <div class="back"><a href="./">← Back to Home</a></div>
+        <div class="back"><a href="index.html">← Back to Home</a></div>
     </main>
 
-    <footer>© <span id="year"></span> ManyDrive. All rights reserved.</footer>
+    <footer>
+        © <span id="year"></span> ManyDrive by Starfall. All rights reserved.
+        <div>
+            <a href="privacy.html">Privacy Policy</a>
+            <a href="data-deletion.html">Data Deletion</a>
+            <a href="tos.html">Terms of Service</a>
+        </div>
+    </footer>
 
     <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
 </body>

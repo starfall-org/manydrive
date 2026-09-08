@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Privacy Policy · ManyDrive</title>
+    <meta name="description" content="Privacy Policy for ManyDrive, a native Android file manager. Learn what information ManyDrive collects, how it is used, and how to request data deletion.">
     <style>
         :root {
             --bg: #0b1020;
@@ -30,7 +31,7 @@
 
         header {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 22px 24px; max-width: 860px; margin: 0 auto;
+            padding: 22px 24px; max-width: 900px; margin: 0 auto;
         }
         .logo { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 20px; }
         .logo .mark {
@@ -40,8 +41,10 @@
             font-size: 18px; color: #0b1020; font-weight: 800;
         }
         .logo a { color: var(--text); text-decoration: none; }
+        .topnav a { margin-left: 20px; color: var(--muted); font-size: 15px; }
+        .topnav a:hover { color: var(--text); text-decoration: none; }
 
-        main { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+        main { max-width: 900px; margin: 0 auto; padding: 40px 24px 80px; }
 
         .page-head { margin-bottom: 44px; }
         .page-head h1 {
@@ -51,6 +54,23 @@
             margin-bottom: 12px;
         }
         .page-head p { color: var(--muted); }
+
+        .meta {
+            display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px;
+        }
+        .meta span {
+            font-size: 13px; padding: 6px 12px; border-radius: 999px;
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+            color: var(--muted);
+        }
+
+        .toc {
+            background: rgba(79,140,255,0.08); border: 1px solid rgba(79,140,255,0.2);
+            border-radius: 12px; padding: 18px 22px; margin-bottom: 36px; font-size: 14.5px;
+        }
+        .toc strong { color: var(--text); display: block; margin-bottom: 8px; }
+        .toc ol { padding-left: 20px; color: var(--muted); }
+        .toc li { margin-bottom: 4px; }
 
         .content {
             background: var(--bg-soft); border: 1px solid rgba(255,255,255,0.07);
@@ -65,6 +85,13 @@
         .content p { color: var(--muted); margin-bottom: 12px; }
         .content ul { color: var(--muted); padding-left: 22px; margin-bottom: 12px; }
         .content li { margin-bottom: 6px; }
+        .content strong { color: var(--text); }
+        .content .summary { font-size: 14.5px; color: var(--muted); border: 1px dashed rgba(255,255,255,0.15); border-radius: 12px; padding: 16px 18px; margin-bottom: 24px; background: rgba(110,231,183,0.05); }
+
+        table.data { width: 100%; border-collapse: collapse; margin: 14px 0 20px; font-size: 14.5px; }
+        table.data th, table.data td { border: 1px solid rgba(255,255,255,0.12); padding: 10px 12px; text-align: left; vertical-align: top; }
+        table.data th { background: var(--card); color: var(--text); }
+        table.data td { color: var(--muted); }
 
         .back { margin-top: 40px; }
         .back a {
@@ -78,8 +105,10 @@
             padding: 40px 0; border-top: 1px solid rgba(255,255,255,0.06);
             color: var(--muted); text-align: center; font-size: 14px;
         }
+        footer a { margin: 0 10px; }
 
         @media (max-width: 640px) {
+            .topnav { display: none; }
             .content { padding: 24px; }
         }
     </style>
@@ -88,50 +117,163 @@
     <header>
         <div class="logo">
             <div class="mark">M</div>
-            <a href="./">ManyDrive</a>
+            <a href="index.html">ManyDrive</a>
         </div>
+        <nav class="topnav">
+            <a href="index.html">Home</a>
+            <a href="data-deletion.html">Data Deletion</a>
+            <a href="tos.html">Terms</a>
+        </nav>
     </header>
 
     <main>
         <div class="page-head">
             <h1>Privacy Policy</h1>
             <p>Last updated: September 8, 2026</p>
+            <div class="meta">
+                <span>Developer: ManyDrive (Starfall)</span>
+                <span>Contact: nptvscode@gmail.com</span>
+            </div>
         </div>
+
+        <nav class="toc">
+            <strong>Contents</strong>
+            <ol>
+                <li><a href="#introduction">Introduction</a></li>
+                <li><a href="#no-collection">Data We Collect &amp; Why</a></li>
+                <li><a href="#device">Device-Only Data &amp; Encryption</a></li>
+                <li><a href="#permissions">Permissions &amp; Third-Party Services</a></li>
+                <li><a href="#sharing">Data Sharing</a></li>
+                <li><a href="#safety">Data Retention &amp; Security</a></li>
+                <li><a href="#deletion">Your Choices &amp; Data Deletion</a></li>
+                <li><a href="#children">Children's Privacy</a></li>
+                <li><a href="#changes">Changes to This Policy</a></li>
+                <li><a href="#contact">Contact Us</a></li>
+            </ol>
+        </nav>
 
         <div class="content">
-            <p>ManyDrive is committed to protecting your privacy. This Privacy Policy explains what information we collect and how we use it.</p>
+            <div class="summary">
+                <strong>Short version:</strong> ManyDrive is designed to run almost entirely on your device. It does not sell or rent your personal information, does not show advertising, and does not build advertising profiles. The files you manage stay in your connected accounts (Google Drive, S3, service accounts); ManyDrive does not store your files on our servers. You can request full deletion of account data at any time.
+            </div>
 
-            <h2>1. Information Collection</h2>
-            <p>We may collect information you provide directly, such as your email address when signing up. We also automatically collect technical data, such as device identifiers and usage statistics, to improve our service.</p>
+            <h2 id="introduction">1. Introduction</h2>
+            <p>ManyDrive ("the App", "we", "us") is developed and operated by <strong>ManyDrive (Starfall)</strong>, reachable at <a href="mailto:nptvscode@gmail.com">nptvscode@gmail.com</a>. This Privacy Policy explains what information is handled in connection with your use of the App, how it is used, and the choices and rights you have — including your right to request deletion of your data.</p>
+            <p>By using the App, you agree to the handling described in this policy. Because the majority of your data is stored by the storage providers you choose to connect (for example Google Drive), this policy focuses on what the App itself does with your information.</p>
 
-            <h2>2. Usage of Data</h2>
-            <p>We use the collected information to:</p>
+            <h2 id="no-collection">2. Information We Collect</h2>
+            <p>The App is designed so that it does not need a personal account of its own. We do not collect names, email addresses, phone numbers, payment information, or other personal identifiers on our servers. What is handled is described below.</p>
+
+            <table class="data">
+                <tr>
+                    <th>Data</th>
+                    <th>Type</th>
+                    <th>Collected?</th>
+                    <th>Purpose</th>
+                </tr>
+                <tr>
+                    <td>Your selected Google account email address</td>
+                    <td>Personal / account identifier</td>
+                    <td>Yes — stored on your device only</td>
+                    <td>To remember which account you connected so the app can restore your active provider on restart. It is never sent to our servers (see section 3).</td>
+                </tr>
+                <tr>
+                    <td>OAuth access tokens</td>
+                    <td>Authentication credential</td>
+                    <td>Yes — held in memory, not written to disk</td>
+                    <td>To authenticate requests to Google Drive / Photos on your behalf.</td>
+                </tr>
+                <tr>
+                    <td>S3 endpoints, buckets, region, and access keys you provide</td>
+                    <td>Cloud credentials</td>
+                    <td>Yes — stored encrypted on your device only</td>
+                    <td>To browse and transfer files on the S3-compatible endpoint you specify.</td>
+                </tr>
+                <tr>
+                    <td>Google Service Account JSON key you import</td>
+                    <td>Cloud credential (private key)</td>
+                    <td>Yes — stored encrypted on your device only</td>
+                    <td>To authenticate and access the Drive of that service account.</td>
+                </tr>
+                <tr>
+                    <td>Files and metadata (names, sizes, dates, folder structure)</td>
+                    <td>User files (your content)</td>
+                    <td>No — accessed via your own accounts, not stored by us</td>
+                    <td>To list, browse, download and upload your own files through the official SDKs.</td>
+                </tr>
+                <tr>
+                    <td>Device identifiers, analytics, advertising IDs</td>
+                    <td>Technical</td>
+                    <td>No</td>
+                    <td>We do not collect device identifiers and do not use advertising or analytics SDKs.</td>
+                </tr>
+            </table>
+
+            <p><strong>Personal and Sensitive Data:</strong> The App does not require or process sensitive data such as race, religion, health, sexual orientation, financial account numbers (beyond cloud provider fields you voluntarily add), or precise real-time location. Data handled in the screens above is only used for the core service you request.</p>
+
+            <h2 id="device">3. Device-Only Data &amp; Encryption</h2>
+            <p>All credentials we save (your selected Google account email, S3 connection details, imported Service Account keys) are stored <strong>only in the App's private, backup-excluded directory on your device</strong>. They are encrypted at rest with <strong>AES-GCM</strong> using device-bound keys provided by the <strong>Android Keystore</strong>. These keys never leave your device.</p>
             <ul>
-                <li>Provide and maintain the ManyDrive application.</li>
-                <li>Analyze app usage to improve user experience.</li>
-                <li>Communicate updates or support requests.</li>
+                <li>OAuth access tokens are kept only in volatile memory for the duration of a session and are not written to disk.</li>
+                <li>The JSON service-account source file you import is read once; its file path is not retained.</li>
+                <li>Signing out clears the active session. Removing an account deletes its saved connection from your device without deleting any remote files.</li>
+                <li>Reinstalling the App, clearing its data, or moving to another device erases all locally stored credentials, so accounts must be reconnected.</li>
             </ul>
 
-            <h2>3. Data Sharing</h2>
-            <p>We do not sell your personal data. We may share information with third-party service providers only to the extent necessary to perform services on our behalf (e.g., hosting, analytics).</p>
+            <h2 id="permissions">4. Permissions &amp; Third-Party Services</h2>
+            <p>ManyDrive connects to third-party services you explicitly authorize. Each of these services has its own privacy policy and terms, and their data handling is governed by them, not by ManyDrive.</p>
+            <ul>
+                <li><strong>Google Drive Service</strong> — File access is provided through Google's official Drive SDK using the scope you grant. We request access only to your Google Drive and Photos Library to provide the file-management features you use. For privacy information, see Google's Privacy Policy.</li>
+                <li><strong>Amazon S3 / S3-compatible endpoints</strong> — you provide the endpoint, buckets, region, and access keys. Content is transferred directly between your device and that endpoint.</li>
+                <li><strong>Google Service Account</strong> — a JSON key is imported and used to obtain an OAuth token to browse that account's Drive.</li>
+            </ul>
+            <p>We request your Google account access only for the account you pick. Only the selected account's email is persisted on your device.</p>
 
-            <h2>4. Security</h2>
-            <p>We implement industry-standard security measures to protect your information from unauthorized access, alteration, or destruction.</p>
+            <h2 id="sharing">5. Data Sharing</h2>
+            <p>We do not sell your personal information. Because the App does not run its own servers for your content, there is no personal data for us to share. We do not disclose personal data to third parties except:</p>
+            <ul>
+                <li>When you directly connect to a service you chose (for example, delivering a file to the S3 endpoint or Google account you specified); or</li>
+                <li>When required by applicable law, regulation, or legal process.</li>
+            </ul>
 
-            <h2>5. User Rights</h2>
-            <p>Depending on your location, you may have rights regarding your data, including the right to access, correct, or delete your personal information. Please contact us to exercise these rights.</p>
+            <h2 id="safety">6. Data Retention &amp; Security</h2>
+            <p>Your file content lives in the accounts you connect to, so its retention is controlled by those services and by your own actions. Credentials stored on your device are removed when you remove an account, sign out, clear app data, or reinstall the App. We do not retain copies of your files on our side.</p>
+            <p>We apply industry-standard security measures, including AES-GCM encryption via Android Keystore, secure in-memory token handling, and SDK-streamed transfers that use temporary files cleaned up after each transfer.</p>
 
-            <h2>6. Changes to this Policy</h2>
-            <p>We may update this Privacy Policy from time to time. Any changes will be posted within the app.</p>
+            <h2 id="deletion">7. Your Choices &amp; Data Deletion</h2>
+            <p>You control your data. Here is how you can request deletion of your data:</p>
+            <ul>
+                <li><strong>Delete locally within the App:</strong> open the account menu and remove any Google, S3, or Service Account connection. This deletes the encrypted credentials from your device.</li>
+                <li><strong>Sign out:</strong> the active Google session is cleared without removing accounts from the device. You can also revoke access at any time in your Google account settings.</li>
+                <li><strong>Clear app data / reinstall:</strong> completely erases all locally saved credentials and settings.</li>
+                <li><strong>Request deletion from us:</strong> email <a href="mailto:nptvscode@gmail.com">nptvscode@gmail.com</a>. Because we do not operate servers storing your personal data, a request primarily addresses the minimal data you may have sent us (for example, support correspondence). We act on reasonable deletion requests.</li>
+            </ul>
+            <p>For the full description of our deletion process and how to submit a request, see our <a href="data-deletion.html">Data Deletion Policy</a>.</p>
 
-            <h2>7. Contact Us</h2>
-            <p>If you have questions about this Privacy Policy, please contact us at <a href="mailto:privacy@manydrive.com">privacy@manydrive.com</a>.</p>
+            <h2 id="children">8. Children's Privacy</h2>
+            <p>ManyDrive is not directed to children under 13 (or the applicable minimum age of digital consent in your region). We do not knowingly collect personal information from children.</p>
+
+            <h2 id="changes">9. Changes to This Policy</h2>
+            <p>We may update this Privacy Policy from time to time to reflect changes in our app or legal requirements. When we do, we will update the "Last updated" date at the top of this page. For significant changes, we will notify you within the App.</p>
+
+            <h2 id="contact">10. Contact Us</h2>
+            <p>If you have questions or requests about this Privacy Policy, your data, or account deletion, please contact us at:</p>
+            <ul>
+                <li>Email: <a href="mailto:nptvscode@gmail.com">nptvscode@gmail.com</a></li>
+            </ul>
         </div>
 
-        <div class="back"><a href="./">← Back to Home</a></div>
+        <div class="back"><a href="index.html">← Back to Home</a></div>
     </main>
 
-    <footer>© <span id="year"></span> ManyDrive. All rights reserved.</footer>
+    <footer>
+        © <span id="year"></span> ManyDrive by Starfall. All rights reserved.
+        <div>
+            <a href="privacy.html">Privacy Policy</a>
+            <a href="data-deletion.html">Data Deletion</a>
+            <a href="tos.html">Terms of Service</a>
+        </div>
+    </footer>
 
     <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
 </body>

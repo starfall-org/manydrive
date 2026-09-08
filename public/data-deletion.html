@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Deletion Policy · ManyDrive</title>
+    <meta name="description" content="How to delete your data and accounts in ManyDrive. Learn how to remove connected accounts, clear app data, and request data deletion from the developer.">
+    <style>
+        :root {
+            --bg: #0b1020;
+            --bg-soft: #111a33;
+            --card: #16224a;
+            --accent: #4f8cff;
+            --accent-2: #6ee7b7;
+            --text: #e8ecf8;
+            --muted: #9aa5c0;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+            background: radial-gradient(1200px 600px at 80% -10%, #1c2a5a 0%, var(--bg) 55%);
+            color: var(--text);
+            line-height: 1.7;
+            min-height: 100vh;
+        }
+
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 22px 24px; max-width: 900px; margin: 0 auto;
+        }
+        .logo { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 20px; }
+        .logo .mark {
+            width: 36px; height: 36px; border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; color: #0b1020; font-weight: 800;
+        }
+        .logo a { color: var(--text); text-decoration: none; }
+        .topnav a { margin-left: 20px; color: var(--muted); font-size: 15px; }
+        .topnav a:hover { color: var(--text); text-decoration: none; }
+
+        main { max-width: 900px; margin: 0 auto; padding: 40px 24px 80px; }
+
+        .page-head { margin-bottom: 44px; }
+        .page-head h1 {
+            font-size: clamp(30px, 5vw, 44px); font-weight: 800; letter-spacing: -0.5px;
+            background: linear-gradient(90deg, var(--accent), var(--accent-2));
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+            margin-bottom: 12px;
+        }
+        .page-head p { color: var(--muted); }
+
+        .content {
+            background: var(--bg-soft); border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 16px; padding: 40px;
+        }
+
+        .content h2 {
+            font-size: 19px; color: var(--text); margin: 34px 0 10px;
+            padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .content h2:first-of-type { margin-top: 0; }
+        .content p { color: var(--muted); margin-bottom: 12px; }
+        .content ul, .content ol { color: var(--muted); padding-left: 22px; margin-bottom: 12px; }
+        .content li { margin-bottom: 8px; }
+        .content strong { color: var(--text); }
+
+        .steps {
+            margin: 16px 0 24px;
+        }
+        .step {
+            display: flex; gap: 16px; align-items: flex-start;
+            background: var(--card); border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 14px; padding: 18px; margin-bottom: 14px;
+        }
+        .step .num {
+            width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            color: #0b1020; font-weight: 800; display: flex; align-items: center; justify-content: center;
+        }
+        .step h4 { font-size: 16px; margin-bottom: 4px; }
+        .step p { color: var(--muted); font-size: 14.5px; margin: 0; }
+
+        .notice {
+            background: rgba(79,140,255,0.1); border: 1px solid rgba(79,140,255,0.3);
+            border-radius: 12px; padding: 16px 18px; margin: 20px 0; font-size: 14.5px; color: var(--muted);
+        }
+        .notice strong { color: var(--text); }
+
+        .back { margin-top: 40px; }
+        .back a {
+            display: inline-block; padding: 12px 24px; border-radius: 12px;
+            background: rgba(255,255,255,0.06); color: var(--text);
+            border: 1px solid rgba(255,255,255,0.12); font-weight: 600;
+        }
+        .back a:hover { background: rgba(255,255,255,0.1); text-decoration: none; }
+
+        footer {
+            padding: 40px 0; border-top: 1px solid rgba(255,255,255,0.06);
+            color: var(--muted); text-align: center; font-size: 14px;
+        }
+        footer a { margin: 0 10px; }
+
+        @media (max-width: 640px) {
+            .topnav { display: none; }
+            .content { padding: 24px; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <div class="mark">M</div>
+            <a href="index.html">ManyDrive</a>
+        </div>
+        <nav class="topnav">
+            <a href="index.html">Home</a>
+            <a href="privacy.html">Privacy</a>
+            <a href="tos.html">Terms</a>
+        </nav>
+    </header>
+
+    <main>
+        <div class="page-head">
+            <h1>Data Deletion Policy</h1>
+            <p>Last updated: September 8, 2026</p>
+        </div>
+
+        <div class="content">
+            <p>ManyDrive is committed to protecting your privacy and honoring your right to control your data. This page explains <strong>how your data is stored</strong> and <strong>exactly how you can request deletion</strong> of your data and accounts.</p>
+
+            <h2>What Data Does ManyDrive Store?</h2>
+            <p>ManyDrive does not operate servers that store your personal data or files. All account data that the App saves is stored <strong>locally on your own device</strong>, in the App's private directory, encrypted with AES-GCM using Android Keystore keys. This data consists of:</p>
+            <ul>
+                <li>The email address of the Google account you selected;</li>
+                <li>Your S3 connection details (endpoint, bucket, region, access keys);</li>
+                <li>Your imported Google Service Account JSON key (private key).</li>
+            </ul>
+            <p>Your files and their content are <strong>not</strong> copied to us — they remain in the cloud providers (Google Drive, Amazon S3, etc.) that you connected. Access tokens are held only in memory during a session.</p>
+
+            <h2>How to Delete Your Data</h2>
+            <p>You can delete your data in either of the following ways. Both are effective immediately.</p>
+
+            <div class="steps">
+                <div class="step">
+                    <div class="num">1</div>
+                    <div>
+                        <h4>Delete an account inside the App</h4>
+                        <p>Open the profile / account menu, select an account, and choose <strong>"Remove"</strong>. This immediately deletes that account's saved credentials (for Google, S3, or Service Account) from your device. Removing an account does not delete your remote files from the connected cloud provider.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="num">2</div>
+                    <div>
+                        <h4>Clear all app data or uninstall</h4>
+                        <p>In Android: <strong>Settings → Apps → ManyDrive → Storage → Clear data</strong>, or simply <strong>uninstall the App</strong>. Either action permanently removes every locally saved credential, setting, and connection from your device.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="num">3</div>
+                    <div>
+                        <h4>Request deletion from the developer</h4>
+                        <p>Email <a href="mailto:nptvscode@gmail.com">nptvscode@gmail.com</a> with the subject "Data Deletion Request" and include the email associated with the account you want removed. Because we do not maintain servers storing your personal data, complying primarily addresses any data you may have sent to us directly (for example, support correspondence). We will confirm the deletion and respond within <strong>30 days</strong>.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="notice">
+                <strong>Note about your connected cloud accounts:</strong> the App only deletes the <em>connection credentials</em> stored on your device. It does not and cannot delete files inside your Google Drive or S3 buckets, nor your Google accounts themselves. To permanently delete your stored files or entire accounts on those services, please use the deletion tools provided by those services or remove the App's access in your Google account security settings.
+            </div>
+
+            <h2>Deleting the Active Google Session</h2>
+            <p>Use <strong>Sign out</strong> in the App to clear the active Google session. You can also revoke the App's access directly at any time in your Google account settings (see <em>Third-party apps with account access</em>). Revoking access stops the App from using your Google account data.</p>
+
+            <h2>How Long We Keep Data</h2>
+            <p>No personal data is retained by the developer. Data stored locally on your device is kept only until you delete it (as described above), clear app data, or uninstall the App. We do not keep backups of your locally stored credentials.</p>
+
+            <h2>Questions?</h2>
+            <p>If you have any question about deleting your data, contact us at <a href="mailto:nptvscode@gmail.com">nptvscode@gmail.com</a> and we will be happy to help.</p>
+        </div>
+
+        <div class="back"><a href="index.html">← Back to Home</a></div>
+    </main>
+
+    <footer>
+        © <span id="year"></span> ManyDrive by Starfall. All rights reserved.
+        <div>
+            <a href="privacy.html">Privacy Policy</a>
+            <a href="data-deletion.html">Data Deletion</a>
+            <a href="tos.html">Terms of Service</a>
+        </div>
+    </footer>
+
+    <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+</body>
+</html>
