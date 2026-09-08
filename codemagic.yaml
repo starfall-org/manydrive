@@ -1,0 +1,46 @@
+workflows:
+  android-debug:
+    name: ManyDrive Android Debug
+    instance_type: linux_x2
+    max_build_duration: 60
+    environment:
+      java: 17
+    scripts:
+      - name: Set up Android SDK
+        script: |
+          printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
+      - name: Build debug APK
+        script: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+    artifacts:
+      - app/build/outputs/apk/debug/*.apk
+
+  android-release:
+    name: ManyDrive Android Release
+    instance_type: linux_x2
+    max_build_duration: 60
+    environment:
+      java: 17
+      android_signing:
+        # Must match the Reference name in Codemagic's Android keystores tab.
+        - manydrive_release
+    scripts:
+      - name: Set up Android SDK
+        script: |
+          printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
+      - name: Check release signing credentials
+        script: |
+          set -eu
+          : "${CM_KEYSTORE_PATH:?Missing keystore path}"
+          : "${CM_KEYSTORE_PASSWORD:?Missing keystore password}"
+          : "${CM_KEY_ALIAS:?Missing key alias}"
+          : "${CM_KEY_PASSWORD:?Missing key password}"
+          test -f "$CM_KEYSTORE_PATH"
+      - name: Build release APK and AAB
+        script: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace
+    artifacts:
+      - app/build/outputs/apk/release/*.apk
+      - app/build/outputs/bundle/release/*.aab

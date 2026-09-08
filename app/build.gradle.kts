@@ -26,9 +26,18 @@ android {
         versionName = "2.3.11"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = System.getenv("CM_KEYSTORE_PATH")?.let { file(it) }
+            storePassword = System.getenv("CM_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("CM_KEY_ALIAS")
+            keyPassword = System.getenv("CM_KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }
