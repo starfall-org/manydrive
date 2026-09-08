@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms of Service · ManyDrive</title>
+    <style>
+        :root {
+            --bg: #0b1020;
+            --bg-soft: #111a33;
+            --card: #16224a;
+            --accent: #4f8cff;
+            --accent-2: #6ee7b7;
+            --text: #e8ecf8;
+            --muted: #9aa5c0;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+            background: radial-gradient(1200px 600px at 80% -10%, #1c2a5a 0%, var(--bg) 55%);
+            color: var(--text);
+            line-height: 1.7;
+            min-height: 100vh;
+        }
+
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 22px 24px; max-width: 860px; margin: 0 auto;
+        }
+        .logo { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 20px; }
+        .logo .mark {
+            width: 36px; height: 36px; border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; color: #0b1020; font-weight: 800;
+        }
+        .logo a { color: var(--text); text-decoration: none; }
+
+        main { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+
+        .page-head { margin-bottom: 44px; }
+        .page-head h1 {
+            font-size: clamp(30px, 5vw, 44px); font-weight: 800; letter-spacing: -0.5px;
+            background: linear-gradient(90deg, var(--accent), var(--accent-2));
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+            margin-bottom: 12px;
+        }
+        .page-head p { color: var(--muted); }
+
+        .content {
+            background: var(--bg-soft); border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 16px; padding: 40px;
+        }
+
+        .content h2 {
+            font-size: 19px; color: var(--text); margin: 34px 0 10px;
+            padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .content h2:first-of-type { margin-top: 0; }
+        .content p { color: var(--muted); margin-bottom: 12px; }
+        .content ul { color: var(--muted); padding-left: 22px; margin-bottom: 12px; }
+        .content li { margin-bottom: 6px; }
+
+        .back { margin-top: 40px; }
+        .back a {
+            display: inline-block; padding: 12px 24px; border-radius: 12px;
+            background: rgba(255,255,255,0.06); color: var(--text);
+            border: 1px solid rgba(255,255,255,0.12); font-weight: 600;
+        }
+        .back a:hover { background: rgba(255,255,255,0.1); text-decoration: none; }
+
+        footer {
+            padding: 40px 0; border-top: 1px solid rgba(255,255,255,0.06);
+            color: var(--muted); text-align: center; font-size: 14px;
+        }
+
+        @media (max-width: 640px) {
+            .content { padding: 24px; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <div class="mark">M</div>
+            <a href="./">ManyDrive</a>
+        </div>
+    </header>
+
+    <main>
+        <div class="page-head">
+            <h1>Terms of Service</h1>
+            <p>Last updated: September 8, 2026</p>
+        </div>
+
+        <div class="content">
+            <p>Welcome to ManyDrive. By accessing or using our application, you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our services.</p>
+
+            <h2>1. Acceptance of Terms</h2>
+            <p>By using ManyDrive, you acknowledge that you have read, understood, and agreed to these terms.</p>
+
+            <h2>2. User Responsibilities</h2>
+            <p>You are responsible for maintaining the confidentiality of your account information and for all activities that occur under your account. You agree not to use the app for any illegal or unauthorized purpose.</p>
+
+            <h2>3. Intellectual Property</h2>
+            <p>All content, features, and functionality of ManyDrive are the exclusive property of ManyDrive and its licensors.</p>
+
+            <h2>4. Limitation of Liability</h2>
+            <p>ManyDrive is provided "as is" without warranties of any kind. We are not liable for any damages arising out of your use of the application.</p>
+
+            <h2>5. Termination</h2>
+            <p>We reserve the right to terminate or suspend your access to the app at any time, without prior notice, for any violation of these terms.</p>
+
+            <h2>6. Governing Law</h2>
+            <p>These terms are governed by the laws of the jurisdiction in which ManyDrive operates.</p>
+
+            <h2>7. Contact Information</h2>
+            <p>If you have any questions about these Terms, please contact us at <a href="mailto:support@manydrive.com">support@manydrive.com</a>.</p>
+        </div>
+
+        <div class="back"><a href="./">← Back to Home</a></div>
+    </main>
+
+    <footer>© <span id="year"></span> ManyDrive. All rights reserved.</footer>
+
+    <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+</body>
+</html>

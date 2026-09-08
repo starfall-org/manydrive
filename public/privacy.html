@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy · ManyDrive</title>
+    <style>
+        :root {
+            --bg: #0b1020;
+            --bg-soft: #111a33;
+            --card: #16224a;
+            --accent: #4f8cff;
+            --accent-2: #6ee7b7;
+            --text: #e8ecf8;
+            --muted: #9aa5c0;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+            background: radial-gradient(1200px 600px at 80% -10%, #1c2a5a 0%, var(--bg) 55%);
+            color: var(--text);
+            line-height: 1.7;
+            min-height: 100vh;
+        }
+
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 22px 24px; max-width: 860px; margin: 0 auto;
+        }
+        .logo { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 20px; }
+        .logo .mark {
+            width: 36px; height: 36px; border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; color: #0b1020; font-weight: 800;
+        }
+        .logo a { color: var(--text); text-decoration: none; }
+
+        main { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+
+        .page-head { margin-bottom: 44px; }
+        .page-head h1 {
+            font-size: clamp(30px, 5vw, 44px); font-weight: 800; letter-spacing: -0.5px;
+            background: linear-gradient(90deg, var(--accent), var(--accent-2));
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+            margin-bottom: 12px;
+        }
+        .page-head p { color: var(--muted); }
+
+        .content {
+            background: var(--bg-soft); border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 16px; padding: 40px;
+        }
+
+        .content h2 {
+            font-size: 19px; color: var(--text); margin: 34px 0 10px;
+            padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .content h2:first-of-type { margin-top: 0; }
+        .content p { color: var(--muted); margin-bottom: 12px; }
+        .content ul { color: var(--muted); padding-left: 22px; margin-bottom: 12px; }
+        .content li { margin-bottom: 6px; }
+
+        .back { margin-top: 40px; }
+        .back a {
+            display: inline-block; padding: 12px 24px; border-radius: 12px;
+            background: rgba(255,255,255,0.06); color: var(--text);
+            border: 1px solid rgba(255,255,255,0.12); font-weight: 600;
+        }
+        .back a:hover { background: rgba(255,255,255,0.1); text-decoration: none; }
+
+        footer {
+            padding: 40px 0; border-top: 1px solid rgba(255,255,255,0.06);
+            color: var(--muted); text-align: center; font-size: 14px;
+        }
+
+        @media (max-width: 640px) {
+            .content { padding: 24px; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <div class="mark">M</div>
+            <a href="./">ManyDrive</a>
+        </div>
+    </header>
+
+    <main>
+        <div class="page-head">
+            <h1>Privacy Policy</h1>
+            <p>Last updated: September 8, 2026</p>
+        </div>
+
+        <div class="content">
+            <p>ManyDrive is committed to protecting your privacy. This Privacy Policy explains what information we collect and how we use it.</p>
+
+            <h2>1. Information Collection</h2>
+            <p>We may collect information you provide directly, such as your email address when signing up. We also automatically collect technical data, such as device identifiers and usage statistics, to improve our service.</p>
+
+            <h2>2. Usage of Data</h2>
+            <p>We use the collected information to:</p>
+            <ul>
+                <li>Provide and maintain the ManyDrive application.</li>
+                <li>Analyze app usage to improve user experience.</li>
+                <li>Communicate updates or support requests.</li>
+            </ul>
+
+            <h2>3. Data Sharing</h2>
+            <p>We do not sell your personal data. We may share information with third-party service providers only to the extent necessary to perform services on our behalf (e.g., hosting, analytics).</p>
+
+            <h2>4. Security</h2>
+            <p>We implement industry-standard security measures to protect your information from unauthorized access, alteration, or destruction.</p>
+
+            <h2>5. User Rights</h2>
+            <p>Depending on your location, you may have rights regarding your data, including the right to access, correct, or delete your personal information. Please contact us to exercise these rights.</p>
+
+            <h2>6. Changes to this Policy</h2>
+            <p>We may update this Privacy Policy from time to time. Any changes will be posted within the app.</p>
+
+            <h2>7. Contact Us</h2>
+            <p>If you have questions about this Privacy Policy, please contact us at <a href="mailto:privacy@manydrive.com">privacy@manydrive.com</a>.</p>
+        </div>
+
+        <div class="back"><a href="./">← Back to Home</a></div>
+    </main>
+
+    <footer>© <span id="year"></span> ManyDrive. All rights reserved.</footer>
+
+    <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+</body>
+</html>

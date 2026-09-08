@@ -1,89 +1,216 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Welcome to Firebase Hosting</title>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ManyDrive — Your Secure Drive File Manager</title>
+    <meta name="description" content="ManyDrive is a native Android file manager for Google Drive, S3, and Google Service Accounts. Browse, upload, and manage your files securely on the go.">
+    <style>
+        :root {
+            --bg: #0b1020;
+            --bg-soft: #111a33;
+            --card: #16224a;
+            --accent: #4f8cff;
+            --accent-2: #6ee7b7;
+            --text: #e8ecf8;
+            --muted: #9aa5c0;
+        }
 
-    <!-- update the version number as needed -->
-    <script defer src="/__/firebase/12.18.0/firebase-app-compat.js"></script>
-    <!-- include only the Firebase features as you need -->
-    <script defer src="/__/firebase/12.18.0/firebase-auth-compat.js"></script>
-    <script defer src="/__/firebase/12.18.0/firebase-database-compat.js"></script>
-    <script defer src="/__/firebase/12.18.0/firebase-firestore-compat.js"></script>
-    <script defer src="/__/firebase/12.18.0/firebase-functions-compat.js"></script>
-    <script defer src="/__/firebase/12.18.0/firebase-messaging-compat.js"></script>
-    <script defer src="/__/firebase/12.18.0/firebase-storage-compat.js"></script>
-    <script defer src="/__/firebase/12.18.0/firebase-analytics-compat.js"></script>
-    <script defer src="/__/firebase/12.18.0/firebase-remote-config-compat.js"></script>
-    <script defer src="/__/firebase/12.18.0/firebase-performance-compat.js"></script>
-    <!-- 
-      initialize the SDK after all desired features are loaded, set useEmulator to false
-      to avoid connecting the SDK to running emulators.
-    -->
-    <script defer src="/__/firebase/init.js?useEmulator=true"></script>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
-    <style media="screen">
-      body { background: #ECEFF1; color: rgba(0,0,0,0.87); font-family: Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; }
-      #message { background: white; max-width: 360px; margin: 100px auto 16px; padding: 32px 24px; border-radius: 3px; }
-      #message h2 { color: #ffa100; font-weight: bold; font-size: 16px; margin: 0 0 8px; }
-      #message h1 { font-size: 22px; font-weight: 300; color: rgba(0,0,0,0.6); margin: 0 0 16px;}
-      #message p { line-height: 140%; margin: 16px 0 24px; font-size: 14px; }
-      #message a { display: block; text-align: center; background: #039be5; text-transform: uppercase; text-decoration: none; color: white; padding: 16px; border-radius: 4px; }
-      #message, #message a { box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); }
-      #load { color: rgba(0,0,0,0.4); text-align: center; font-size: 13px; }
-      @media (max-width: 600px) {
-        body, #message { margin-top: 0; background: white; box-shadow: none; }
-        body { border-top: 16px solid #ffa100; }
-      }
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+            background: radial-gradient(1200px 600px at 80% -10%, #1c2a5a 0%, var(--bg) 55%);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 22px 24px;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .logo { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 20px; }
+        .logo .mark {
+            width: 36px; height: 36px; border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; color: #0b1020; font-weight: 800;
+        }
+
+        .nav a { margin-left: 20px; color: var(--muted); font-size: 15px; }
+        .nav a:hover { color: var(--text); text-decoration: none; }
+
+        .hero {
+            text-align: center;
+            padding: 90px 24px 70px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .hero .badge {
+            display: inline-block; padding: 6px 14px; border-radius: 999px;
+            background: rgba(79, 140, 255, 0.15); color: var(--accent);
+            font-size: 14px; margin-bottom: 24px; border: 1px solid rgba(79,140,255,0.3);
+        }
+        .hero h1 { font-size: clamp(34px, 6vw, 58px); line-height: 1.1; font-weight: 800; letter-spacing: -0.5px; }
+        .hero h1 span { background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+        .hero p {
+            margin: 24px auto 36px; font-size: 19px; color: var(--muted);
+            max-width: 640px;
+        }
+        .cta { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 14px 28px; border-radius: 12px; font-size: 16px; font-weight: 600;
+            transition: transform .15s ease, box-shadow .15s ease;
+        }
+        .btn:hover { transform: translateY(-2px); text-decoration: none; }
+        .btn-primary { background: linear-gradient(90deg, var(--accent), #3f6fe0); color: #fff; box-shadow: 0 8px 24px rgba(79,140,255,0.35); }
+        .btn-secondary { background: rgba(255,255,255,0.06); color: var(--text); border: 1px solid rgba(255,255,255,0.12); }
+
+        .features {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px; padding: 40px 0 80px;
+        }
+        .feature {
+            background: var(--bg-soft); border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 16px; padding: 28px;
+        }
+        .feature .icon {
+            width: 48px; height: 48px; border-radius: 12px; margin-bottom: 18px;
+            background: rgba(79,140,255,0.18); display: flex; align-items: center; justify-content: center; font-size: 22px;
+        }
+        .feature h3 { font-size: 18px; margin-bottom: 8px; }
+        .feature p { color: var(--muted); font-size: 15px; }
+
+        .providers {
+            background: var(--bg-soft); border-top: 1px solid rgba(255,255,255,0.07);
+            padding: 60px 0;
+        }
+        .providers h2 { text-align: center; font-size: 28px; margin-bottom: 8px; }
+        .providers .sub { text-align: center; color: var(--muted); margin-bottom: 40px; }
+        .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+        .tile {
+            background: var(--card); border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 16px; padding: 24px;
+        }
+        .tile h4 { margin-bottom: 6px; }
+        .tile p { color: var(--muted); font-size: 14px; }
+
+        footer {
+            padding: 40px 0; color: var(--muted); text-align: center;
+            border-top: 1px solid rgba(255,255,255,0.06); font-size: 14px;
+        }
+        footer .links { margin-top: 12px; }
+        footer .links a { margin: 0 12px; }
+
+        @media (max-width: 640px) {
+            .nav { display: none; }
+            .hero { padding-top: 60px; }
+        }
     </style>
-  </head>
-  <body>
-    <div id="message">
-      <h2>Welcome</h2>
-      <h1>Firebase Hosting Setup Complete</h1>
-      <p>You're seeing this because you've successfully setup Firebase Hosting. Now it's time to go build something extraordinary!</p>
-      <a target="_blank" href="https://firebase.google.com/docs/hosting/">Open Hosting Documentation</a>
-    </div>
-    <p id="load">Firebase SDK Loading&hellip;</p>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <div class="mark">M</div>
+            <span>ManyDrive</span>
+        </div>
+        <nav class="nav">
+            <a href="#features">Features</a>
+            <a href="#providers">Providers</a>
+            <a href="privacy">Privacy</a>
+            <a href="tos">Terms</a>
+        </nav>
+    </header>
+
+    <section class="hero">
+        <div class="badge">Native Android · Kotlin · Jetpack Compose</div>
+        <h1>Your Files, <span>Everywhere</span>, Securely.</h1>
+        <p>A native Android file manager that connects Google Drive, S3 buckets, and Google Service Accounts — all in one clean, Compose-built interface.</p>
+        <div class="cta">
+            <a class="btn btn-primary" href="#features">Explore Features</a>
+            <a class="btn btn-secondary" href="privacy">Privacy Policy</a>
+        </div>
+    </section>
+
+    <section class="container" id="features">
+        <div class="features">
+            <div class="feature">
+                <div class="icon">🗂️</div>
+                <h3>Unified File Management</h3>
+                <p>Browse My Drive, shared folders, and files across every connected provider from one clean, Material 3 interface.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">🔐</div>
+                <h3>Device-Bound Encryption</h3>
+                <p>Access keys and imported private keys are encrypted with AES-GCM using Android Keystore — keys never leave your device.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">🖼️</div>
+                <h3>Google Photos Upload</h3>
+                <p>Upload images, videos, and folders straight to Google Photos — with automatic album creation for folders.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">🔑</div>
+                <h3>Google Account Picker</h3>
+                <p>Select an account already on your device and grant Drive access directly — only your selected email is persisted.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">☁️</div>
+                <h3>Streamed Transfers</h3>
+                <p>Uploads and downloads stream content directly through the official SDKs, using temporary files that are cleaned up after each transfer.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">🔍</div>
+                <h3>Shared Resources</h3>
+                <p>Access incoming shared drives and files by parent ID, including children accessible through inherited permissions.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="providers" id="providers">
+        <div class="container">
+            <h2>Connect Your Providers</h2>
+            <p class="sub">Add as many accounts as you need — the active provider is restored on restart.</p>
+            <div class="tiles">
+                <div class="tile">
+                    <h4>🟦 Google Drive</h4>
+                    <p>Connect any Google account on the device. Full My Drive and Shared access, plus Google Photos uploads.</p>
+                </div>
+                <div class="tile">
+                    <h4>🟨 Amazon S3</h4>
+                    <p>Add any HTTPS S3-compatible endpoint, bucket, region, and access keys. Multiple connections supported.</p>
+                </div>
+                <div class="tile">
+                    <h4>🧾 Google Service Account</h4>
+                    <p>Import a service-account JSON key, obtain an OAuth token, and browse its Drive — validated before saving.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div>© <span id="year"></span> ManyDrive. All rights reserved.</div>
+        <div class="links">
+            <a href="privacy">Privacy Policy</a>
+            <a href="tos">Terms of Service</a>
+            <a href="404.html">404</a>
+        </div>
+    </footer>
 
     <script>
-      document.addEventListener('DOMContentLoaded', function() {
-        const loadEl = document.querySelector('#load');
-        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
-        // // The Firebase SDK is initialized and available here!
-        //
-        // firebase.auth().onAuthStateChanged(user => { });
-        // firebase.database().ref('/path/to/ref').on('value', snapshot => { });
-        // firebase.firestore().doc('/foo/bar').get().then(() => { });
-        // firebase.functions().httpsCallable('yourFunction')().then(() => { });
-        // firebase.messaging().requestPermission().then(() => { });
-        // firebase.storage().ref('/path/to/ref').getDownloadURL().then(() => { });
-        // firebase.analytics(); // call to activate
-        // firebase.analytics().logEvent('tutorial_completed');
-        // firebase.performance(); // call to activate
-        //
-        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
-
-        try {
-          let app = firebase.app();
-          let features = [
-            'auth', 
-            'database', 
-            'firestore',
-            'functions',
-            'messaging', 
-            'storage', 
-            'analytics', 
-            'remoteConfig',
-            'performance',
-          ].filter(feature => typeof app[feature] === 'function');
-          loadEl.textContent = `Firebase SDK loaded with ${features.join(', ')}`;
-        } catch (e) {
-          console.error(e);
-          loadEl.textContent = 'Error loading the Firebase SDK, check the console.';
-        }
-      });
+        document.getElementById('year').textContent = new Date().getFullYear();
     </script>
-  </body>
+</body>
 </html>
