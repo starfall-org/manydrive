@@ -54,6 +54,8 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     // OkHttp 5.4+ requires compileSdk 36+ (5.5+ requires 37). Keep the
     // dependency graph compatible with this app's compileSdk 35 / AGP 8.7.
     implementation(enforcedPlatform("com.squareup.okhttp3:okhttp-bom:5.3.1"))
@@ -64,12 +66,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.activity:activity-compose:1.10.0")
-    implementation("androidx.credentials:credentials:1.3.0")
-    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
-    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
     implementation("com.google.android.gms:play-services-auth:21.6.0")
-    implementation(platform("com.google.firebase:firebase-bom:34.18.0"))
-    implementation("com.google.firebase:firebase-auth")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("aws.sdk.kotlin:s3:1.8.47")
     implementation("androidx.compose.material3:material3")

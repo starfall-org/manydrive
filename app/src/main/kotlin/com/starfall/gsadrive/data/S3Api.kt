@@ -4,6 +4,9 @@ import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
 import aws.sdk.kotlin.services.s3.S3Client
 import aws.sdk.kotlin.services.s3.model.ListObjectsV2Request
 import aws.smithy.kotlin.runtime.net.url.Url
+import aws.smithy.kotlin.runtime.content.ByteStream
+import aws.smithy.kotlin.runtime.content.fromFile
+import java.io.File
 
 data class S3Config(
     val endpoint: String,
@@ -15,7 +18,7 @@ data class S3Config(
 
 /** S3/MinIO-compatible browser using AWS Signature V4 via the official Kotlin SDK. */
 object S3Api {
-    suspend fun list(config: S3Config, prefix: String = ""): List<DriveFile> = S3Client {
+    private fun client(config: S3Config) = S3Client {
         region = config.region.ifBlank { "us-east-1" }
         endpointUrl = Url.parse(config.endpoint)
         forcePathStyle = true
@@ -23,7 +26,30 @@ object S3Api {
             accessKeyId = config.accessKey
             secretAccessKey = config.secretKey
         }
-    }.use { client ->
+    }
+
+    suspend fun upload(config: S3Config, key: String, mimeType: String, file: File) {
+        client(config).use { client ->
+            client.putObject {
+                bucket = config.bucket
+                this.key = key
+                contentType = mimeType
+                body = ByteStream.fromFile(file)
+            }
+        }
+    }
+
+    suspend fun createFolder(config: S3Config, key: String) {
+        client(config).use { client ->
+            client.putObject {
+                bucket = config.bucket
+                this.key = key
+                body = ByteStream.fromBytes(ByteArray(0))
+            }
+        }
+    }
+
+    suspend fun list(config: S3Config, prefix: String = ""): List<DriveFile> = client(config).use { client ->
         val response = client.listObjectsV2(ListObjectsV2Request {
             bucket = config.bucket
             this.prefix = prefix

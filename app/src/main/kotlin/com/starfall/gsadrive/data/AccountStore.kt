@@ -12,6 +12,12 @@ class AccountStore(context: Context) {
         List(values.length()) { values.getString(it) }
     }.getOrDefault(emptyList())
 
+    fun active(): String? = preferences.getString("active", null)
+
+    fun clearActive() {
+        preferences.edit().remove("active").apply()
+    }
+
     fun select(email: String) {
         val next = (accounts() + email).distinct()
         preferences.edit().putString("accounts", JSONArray(next).toString()).putString("active", email).apply()

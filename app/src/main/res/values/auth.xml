@@ -1,4 +1,0 @@
-<resources>
-    <!-- Replace with the OAuth 2.0 Web client ID from Google Cloud Console. -->
-    <string name="google_oauth_server_client_id">REPLACE_WITH_WEB_CLIENT_ID.apps.googleusercontent.com</string>
-</resources>

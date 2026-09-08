@@ -2,7 +2,7 @@ package com.starfall.gsadrive.data
 
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URLEncoder
 import java.net.URL
@@ -23,33 +23,39 @@ data class DriveFile(
 }
 
 object DriveApi {
+    fun displayName(accessToken: String): String? = JSONObject(request(accessToken, "GET",
+        "https://www.googleapis.com/drive/v3/about?fields=user(displayName)").decodeToString())
+        .optJSONObject("user")?.optString("displayName")?.trim()?.takeIf { it.isNotEmpty() }
+
     fun listFiles(accessToken: String, sharedWithMe: Boolean = false, trashed: Boolean = false, parentId: String? = null): List<DriveFile> {
         val query = when {
             trashed -> "trashed = true"
+            parentId != null -> "'${parentId.replace("\\", "\\\\").replace("'", "\\'")}' in parents and trashed = false"
             sharedWithMe -> "sharedWithMe = true and trashed = false"
-            parentId != null -> "'$parentId' in parents and trashed = false"
-            else -> "'root' in parents and trashed = false"
+            else -> "'root' in parents and 'me' in owners and trashed = false"
         }
-        val fields = "files(id,name,mimeType,modifiedTime,size,thumbnailLink,webViewLink,parents,trashed)"
-        val url = URL("https://www.googleapis.com/drive/v3/files?q=${URLEncoder.encode(query, "UTF-8")}&orderBy=folder,modifiedTime%20desc&pageSize=100&fields=$fields")
-        val connection = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"; setRequestProperty("Authorization", "Bearer $accessToken"); setRequestProperty("Accept", "application/json")
-            connectTimeout = 15_000; readTimeout = 15_000
-        }
-        val body = (if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream).bufferedReader().use { it.readText() }
-        if (connection.responseCode !in 200..299) error("Drive API (${connection.responseCode}): $body")
-        val files = JSONObject(body).optJSONArray("files") ?: return emptyList()
-        return List(files.length()) { index -> files.getJSONObject(index).toDriveFile() }
+        val files = mutableListOf<DriveFile>()
+        var pageToken: String? = null
+        do {
+            val fields = "nextPageToken,files(id,name,mimeType,modifiedTime,size,thumbnailLink,webViewLink,parents,trashed)"
+            val page = pageToken?.let { "&pageToken=${URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
+            val address = "https://www.googleapis.com/drive/v3/files?q=${URLEncoder.encode(query, "UTF-8")}&supportsAllDrives=true&includeItemsFromAllDrives=true&orderBy=folder,modifiedTime%20desc&pageSize=100&fields=$fields$page"
+            val response = JSONObject(request(accessToken, "GET", address).decodeToString())
+            val items = response.optJSONArray("files")
+            if (items != null) repeat(items.length()) { files += items.getJSONObject(it).toDriveFile() }
+            pageToken = response.optString("nextPageToken").takeIf { it.isNotBlank() }
+        } while (pageToken != null)
+        return files
     }
 
-    fun createFolder(accessToken: String, name: String, parentId: String? = null) {
+    fun createFolder(accessToken: String, name: String, parentId: String? = null): String {
         val body = JSONObject().put("name", name).put("mimeType", "application/vnd.google-apps.folder")
         parentId?.let { body.put("parents", JSONArray().put(it)) }
-        request(accessToken, "POST", "https://www.googleapis.com/drive/v3/files", body.toString().toByteArray(), "application/json")
+        return JSONObject(request(accessToken, "POST", "https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id", body.toString().toByteArray(), "application/json").decodeToString()).getString("id")
     }
 
     fun moveToTrash(accessToken: String, fileId: String) {
-        request(accessToken, "PATCH", "https://www.googleapis.com/drive/v3/files/$fileId", "{\"trashed\":true}".toByteArray(), "application/json")
+        request(accessToken, "PATCH", "https://www.googleapis.com/drive/v3/files/$fileId?supportsAllDrives=true", "{\"trashed\":true}".toByteArray(), "application/json")
     }
 
     fun move(accessToken: String, file: DriveFile, newParentId: String) {
@@ -67,16 +73,37 @@ object DriveApi {
         request(accessToken, "POST", "https://www.googleapis.com/drive/v3/files/$fileId/permissions?sendNotificationEmail=true", permission.toString().toByteArray(), "application/json")
     }
 
-    fun upload(accessToken: String, name: String, mimeType: String, bytes: ByteArray, parentId: String? = null) {
-        val boundary = "ManyDrive${System.currentTimeMillis()}"
+    fun restore(accessToken: String, fileId: String) {
+        request(accessToken, "PATCH", "https://www.googleapis.com/drive/v3/files/$fileId?supportsAllDrives=true",
+            "{\"trashed\":false}".toByteArray(), "application/json")
+    }
+
+    fun upload(accessToken: String, name: String, mimeType: String, input: InputStream, parentId: String? = null) {
+        val boundary = "ManyDrive${java.util.UUID.randomUUID()}"
         val metadata = JSONObject().put("name", name).apply { parentId?.let { put("parents", JSONArray().put(it)) } }
-        val output = ByteArrayOutputStream()
-        fun text(value: String) = output.write(value.toByteArray(Charsets.UTF_8))
-        text("--$boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n")
-        text("--$boundary\r\nContent-Type: $mimeType\r\n\r\n")
-        output.write(bytes)
-        text("\r\n--$boundary--\r\n")
-        request(accessToken, "POST", "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", output.toByteArray(), "multipart/related; boundary=$boundary")
+        val connection = (URL("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true")
+            .openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            setRequestProperty("Authorization", "Bearer $accessToken")
+            setRequestProperty("Content-Type", "multipart/related; boundary=$boundary")
+            connectTimeout = 15_000
+            readTimeout = 120_000
+            doOutput = true
+            setChunkedStreamingMode(64 * 1024)
+        }
+        try {
+            connection.outputStream.use { output ->
+                fun text(value: String) = output.write(value.toByteArray(Charsets.UTF_8))
+                text("--$boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n$metadata\r\n")
+                text("--$boundary\r\nContent-Type: $mimeType\r\n\r\n")
+                input.copyTo(output, 64 * 1024)
+                text("\r\n--$boundary--\r\n")
+            }
+            val status = connection.responseCode
+            val body = (if (status in 200..299) connection.inputStream else connection.errorStream)
+                ?.bufferedReader()?.use { it.readText() }.orEmpty()
+            check(status in 200..299) { "Drive API ($status): $body" }
+        } finally { connection.disconnect() }
     }
 
     fun download(accessToken: String, fileId: String): ByteArray = request(accessToken, "GET", "https://www.googleapis.com/drive/v3/files/$fileId?alt=media")
