@@ -212,7 +212,8 @@ class GoogleDriveDataSource {
       throw Exception('Not logged in');
     }
     // Drive API v3 ignores 'parents' in the body; must use add/removeParents
-    final current = await _driveApi!.files.get(fileId, $fields: 'parents');
+    final current =
+        await _driveApi!.files.get(fileId, $fields: 'parents') as drive.File;
     final oldParents = (current.parents ?? []).join(',');
     await _driveApi!.files.update(
       drive.File(),
