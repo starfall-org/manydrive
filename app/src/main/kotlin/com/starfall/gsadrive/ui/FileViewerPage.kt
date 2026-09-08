@@ -1,10 +1,17 @@
 package com.starfall.gsadrive.ui
 
 import android.graphics.BitmapFactory
+import android.view.LayoutInflater
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.rememberUpdatedState
+import com.starfall.gsadrive.R
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +35,19 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.ui.graphics.Color
+import com.starfall.gsadrive.PlaybackSettings
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,7 +67,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import androidx.media3.ui.compose.material3.MiniController
 import androidx.media3.ui.compose.material3.buttons.PlayPauseButton
 import com.starfall.gsadrive.data.DriveFile
 import com.starfall.gsadrive.isSwipePreview
@@ -279,48 +298,157 @@ private fun ImageViewer(path: String) {
     }
 }
 
-/** PlayerView owns the video surface. Audio keeps its controls permanently visible. */
+/** PlayerView only owns the surface; Compose owns controls and seek gestures. */
 @OptIn(UnstableApi::class)
 @Composable
-private fun MediaViewer(player: Player, alwaysShowControls: Boolean) {
-    AndroidView(
-        modifier = Modifier.fillMaxSize(),
-        factory = { context ->
-            PlayerView(context).apply {
-                this.player = player
-                useController = true
-                controllerAutoShow = true
-                controllerHideOnTouch = !alwaysShowControls
-                controllerShowTimeoutMs = if (alwaysShowControls) 0 else 3_000
-                setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
-                setShutterBackgroundColor(android.graphics.Color.BLACK)
-                setShowPreviousButton(true)
-                setShowRewindButton(true)
-                setShowFastForwardButton(true)
-                setShowNextButton(true)
-                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                keepScreenOn = true
-                if (alwaysShowControls) showController()
+internal fun MediaViewer(
+    player: Player,
+    alwaysShowControls: Boolean,
+    compactFraction: Float = 0f,
+    title: String = "",
+    onExpand: () -> Unit = {},
+    onClose: () -> Unit = {}
+) {
+    val compact = compactFraction > 0.85f
+    val currentCompact by rememberUpdatedState(compact)
+    val currentExpand by rememberUpdatedState(onExpand)
+    val slideshowEnabled by PlaybackSettings.slideshowEnabled.collectAsState()
+    var position by remember(player) { mutableLongStateOf(0L) }
+    var duration by remember(player) { mutableLongStateOf(0L) }
+    var seekable by remember(player) { mutableStateOf(false) }
+    var dragging by remember(player) { mutableStateOf(false) }
+    var scrubPosition by remember(player) { mutableFloatStateOf(0f) }
+    var feedback by remember(player) { mutableStateOf<String?>(null) }
+    var feedbackVersion by remember(player) { mutableLongStateOf(0L) }
+
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onEvents(player: Player, events: Player.Events) {
+                duration = player.duration.coerceAtLeast(0L)
+                position = player.currentPosition.coerceAtLeast(0L)
+                seekable = player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM) &&
+                    player.isCurrentMediaItemSeekable
+                if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) dragging = false
             }
-        },
-        update = { view ->
-            if (view.player !== player) view.player = player
-            view.controllerHideOnTouch = !alwaysShowControls
-            view.controllerShowTimeoutMs = if (alwaysShowControls) 0 else 3_000
-            view.setShowPreviousButton(true)
-            view.setShowRewindButton(true)
-            view.setShowFastForwardButton(true)
-            view.setShowNextButton(true)
-            if (alwaysShowControls) view.showController()
-        },
-        onRelease = { view ->
-            view.player = null
-            view.keepScreenOn = false
         }
-    )
+        player.addListener(listener)
+        onDispose { player.removeListener(listener) }
+    }
+    LaunchedEffect(player) {
+        while (true) {
+            position = player.currentPosition.coerceAtLeast(0L)
+            duration = player.duration.coerceAtLeast(0L)
+            seekable = player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM) &&
+                player.isCurrentMediaItemSeekable
+            delay(250)
+        }
+    }
+    LaunchedEffect(feedbackVersion) {
+        delay(700)
+        feedback = null
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
+        val videoWidth = maxWidth * (1f - compactFraction) + 120.dp.coerceAtMost(maxWidth * 0.4f) * compactFraction
+        AndroidView(
+            modifier = Modifier.fillMaxHeight().width(videoWidth),
+            factory = { context ->
+                (LayoutInflater.from(context).inflate(R.layout.media_player_surface, null) as PlayerView).apply {
+                    this.player = player
+                    useController = false
+                    setKeepContentOnPlayerReset(true)
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                    setShutterBackgroundColor(android.graphics.Color.BLACK)
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    keepScreenOn = true
+                }
+            },
+            update = { view ->
+                if (view.player !== player) view.player = player
+                view.useController = false
+            },
+            onRelease = { view ->
+                view.player = null
+                view.keepScreenOn = false
+            }
+        )
+        Box(
+            Modifier.fillMaxSize().pointerInput(player) {
+                detectTapGestures(onTap = { if (currentCompact) currentExpand() }, onDoubleTap = { offset ->
+                    if (currentCompact) {
+                        currentExpand()
+                    } else if (player.isCurrentMediaItemSeekable &&
+                        player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) {
+                        val backward = offset.x < size.width / 2f
+                        val target = (player.currentPosition + if (backward) -10_000L else 10_000L)
+                            .coerceAtLeast(0L)
+                        player.seekTo(if (player.duration > 0) target.coerceAtMost(player.duration) else target)
+                        feedback = if (backward) "−10 giây" else "+10 giây"
+                        feedbackVersion++
+                    }
+                })
+            }
+        )
+        if (alwaysShowControls) {
+            Box(Modifier.fillMaxHeight().width(videoWidth), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.AudioFile, null, tint = Color.LightGray)
+            }
+        }
+        feedback?.let {
+            Text(it, Modifier.align(Alignment.Center).background(Color.Black.copy(alpha = 0.7f)).padding(16.dp),
+                color = Color.White)
+        }
+        if (compact) {
+            Row(Modifier.fillMaxSize().padding(start = videoWidth, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(title, Modifier.weight(1f).padding(horizontal = 8.dp), color = Color.White,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                CompositionLocalProvider(LocalContentColor provides Color.White) {
+                    PlayPauseButton(player)
+                    IconButton(onClick = onClose) { Icon(Icons.Outlined.Close, "Đóng trình phát") }
+                }
+            }
+        }
+        if (!compact) Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.7f)).padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            CompositionLocalProvider(LocalContentColor provides Color.White) {
+                PlayPauseButton(player)
+            }
+            Slider(
+                value = if (dragging) scrubPosition else position.toFloat().coerceIn(0f, duration.toFloat()),
+                onValueChange = { dragging = true; scrubPosition = it },
+                onValueChangeFinished = {
+                    player.seekTo(scrubPosition.toLong().coerceIn(0L, duration))
+                    dragging = false
+                },
+                valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
+                enabled = seekable && duration > 0,
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Tiến độ phát" }
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(mediaTime(if (dragging) scrubPosition.toLong() else position), color = Color.White)
+                Text(mediaTime(duration), color = Color.White)
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Trình chiếu", color = Color.White)
+                Switch(checked = slideshowEnabled, onCheckedChange = PlaybackSettings::setSlideshowEnabled,
+                    modifier = Modifier.semantics { contentDescription = "Tự động phát bài tiếp theo" })
+            }
+        }
+    }
 }
 
-/** YouTube-style horizontal mini-player. Tap or swipe upward to restore the full player. */
+private fun mediaTime(milliseconds: Long): String {
+    val seconds = milliseconds / 1000
+    return if (seconds >= 3600) "%d:%02d:%02d".format(seconds / 3600, seconds / 60 % 60, seconds % 60)
+    else "%d:%02d".format(seconds / 60, seconds % 60)
+}
+
+/** Standalone compact player; the app's expanding player keeps this same surface mounted. */
 @OptIn(UnstableApi::class)
 @Composable
 fun MediaMiniPlayer(
@@ -330,28 +458,16 @@ fun MediaMiniPlayer(
     modifier: Modifier = Modifier
 ) {
     var verticalDrag by remember { mutableFloatStateOf(0f) }
-    val gestureModifier = Modifier.pointerInput(onExpand) {
+    val expand by rememberUpdatedState(onExpand)
+    Box(modifier.pointerInput(player) {
         detectVerticalDragGestures(
             onDragStart = { verticalDrag = 0f },
-            onVerticalDrag = { _, amount -> verticalDrag += amount },
-            onDragEnd = {
-                if (verticalDrag < -40.dp.toPx()) onExpand()
-                verticalDrag = 0f
-            },
+            onVerticalDrag = { change, amount -> change.consume(); verticalDrag += amount },
+            onDragEnd = { if (verticalDrag < -40.dp.toPx()) expand() },
             onDragCancel = { verticalDrag = 0f }
         )
-    }
-    Box(modifier.then(gestureModifier)) {
-        MiniController(
-            player = player,
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onExpand,
-            playerControls = { currentPlayer ->
-                PlayPauseButton(currentPlayer)
-                IconButton(onClick = onClose) {
-                    Icon(Icons.Outlined.Close, "Đóng trình phát")
-                }
-            }
-        )
+    }) {
+        MediaViewer(player, alwaysShowControls = false, compactFraction = 1f,
+            title = player.mediaMetadata.title?.toString().orEmpty(), onExpand = onExpand, onClose = onClose)
     }
 }

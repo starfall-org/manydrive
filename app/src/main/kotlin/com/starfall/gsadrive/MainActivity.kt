@@ -117,9 +117,7 @@ import com.starfall.gsadrive.data.AccountStore
 import com.starfall.gsadrive.data.DriveApi
 import com.starfall.gsadrive.data.DriveFile
 import com.starfall.gsadrive.data.DrivePermission
-import com.starfall.gsadrive.data.PhotoItem
 import com.starfall.gsadrive.data.PhotosApi
-import com.starfall.gsadrive.data.GooglePhotosPickerApi
 import com.starfall.gsadrive.data.S3Api
 import com.starfall.gsadrive.data.S3Account
 import com.starfall.gsadrive.data.S3Accounts
@@ -136,14 +134,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 private const val DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
-private const val PHOTOS_SCOPE = "https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata"
-private const val PHOTOS_PICKER_SCOPE = "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
+private const val PHOTOS_SCOPE = "https://www.googleapis.com/auth/photoslibrary.appendonly"
 
 class MainActivity : ComponentActivity() {
     private lateinit var accountPicker: ActivityResultLauncher<Intent>
     private lateinit var servicePicker: ActivityResultLauncher<Array<String>>
     private lateinit var resolution: ActivityResultLauncher<IntentSenderRequest>
-    private lateinit var pickerAuthorizationResolution: ActivityResultLauncher<IntentSenderRequest>
+    private lateinit var photosAuthorizationResolution: ActivityResultLauncher<IntentSenderRequest>
     private lateinit var folderPicker: ActivityResultLauncher<Uri?>
     private lateinit var filePicker: ActivityResultLauncher<Array<String>>
     private lateinit var notificationPermissionLauncher: ActivityResultLauncher<String>
@@ -186,9 +183,9 @@ class MainActivity : ComponentActivity() {
     private val viewer: ViewerState? get() = viewerCoordinator.state
     private var tab by mutableIntStateOf(0)
     private var generation = 0
-    private var photosLoadedForAccount: String? = null
     private var pendingAuthorization: String? = null
-    private var pendingPickerAuthorization: String? = null
+    private var pendingPhotosAuthorization: String? = null
+    private var pendingPhotosFile: DriveFile? = null
     private var pendingUpload: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -217,21 +214,25 @@ class MainActivity : ComponentActivity() {
         superDark = selection.getBoolean("superDark", false)
         pendingUploadParent = savedInstanceState?.getString("uploadParent")
         pendingAuthorization = savedInstanceState?.getString("authorizationAccount")
-        pendingPickerAuthorization = savedInstanceState?.getString("pickerAuthorizationAccount")
+        pendingPhotosAuthorization = savedInstanceState?.getString("photosAuthorizationAccount")
         pendingUpload = savedInstanceState?.getString("uploadAccount")
-        pickerAuthorizationResolution = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
-            val expected = pendingPickerAuthorization
-            pendingPickerAuthorization = null
+        savedInstanceState?.getStringArray("photosFile")?.let {
+            pendingPhotosFile = DriveFile(it[0], it[1], it[2], null)
+        }
+        photosAuthorizationResolution = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            val expected = pendingPhotosAuthorization
+            pendingPhotosAuthorization = null
             if (expected == null || expected != accountUi.active?.key) return@registerForActivityResult
             if (result.resultCode != RESULT_OK) {
-                Toast.makeText(this, "Đã hủy cấp quyền Google Photos Picker.", Toast.LENGTH_SHORT).show()
+                pendingPhotosFile = null
+                Toast.makeText(this, "Đã hủy cấp quyền Google Photos.", Toast.LENGTH_SHORT).show()
             } else {
                 runCatching { authorization.getAuthorizationResultFromIntent(result.data) }
                     .onSuccess { auth ->
-                        auth.accessToken?.let { startGooglePhotosPicker(expected, it) }
-                            ?: Toast.makeText(this, "Google không trả về quyền Photos Picker.", Toast.LENGTH_LONG).show()
+                        auth.accessToken?.let { pendingPhotosFile?.let { file -> startPhotosUpload(file, it) } }
+                            ?: Toast.makeText(this, "Google không trả về quyền Photos.", Toast.LENGTH_LONG).show()
                     }
-                    .onFailure { Toast.makeText(this, "Không thể cấp quyền Google Photos Picker.", Toast.LENGTH_LONG).show() }
+                    .onFailure { Toast.makeText(this, "Không thể cấp quyền Google Photos.", Toast.LENGTH_LONG).show() }
             }
         }
         resolution = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
@@ -287,6 +288,7 @@ class MainActivity : ComponentActivity() {
                 App(model, tab, ::selectTab, { refresh(forceNetwork = true) }, ::signIn, ::authorize, ::connectS3, ::signOut,
                     { pickUpload(false) }, ::createFolder, ::moveToTrash,
                     FileActionCallbacks(
+                        uploadToPhotos = ::uploadToPhotos,
                         share = ::shareFile,
                         rename = ::renameFile,
                         loadPermissions = ::loadPermissions,
@@ -297,7 +299,7 @@ class MainActivity : ComponentActivity() {
                     ),
                     accountUi.copy(busy = accountUi.busy || model.uploading), ::activate, ::removeAccount,
                     { servicePicker.launch(arrayOf("application/json", "text/json", "text/plain", "application/octet-stream")) },
-                    ::openFolder, ::goUp, ::searchDrive, ::openSearchFolder, { pickUpload(true) }, ::pickAdditionalPhotos, ::restoreFile,
+                    ::openFolder, ::goUp, ::searchDrive, ::openSearchFolder, { pickUpload(true) }, ::restoreFile,
                     themeMode, superDark,
                     { themeMode = it; selection.edit().putString("theme", it.name).apply() },
                     { superDark = it; selection.edit().putBoolean("superDark", it).apply() },
@@ -315,7 +317,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("authorizationAccount", pendingAuthorization)
-        outState.putString("pickerAuthorizationAccount", pendingPickerAuthorization)
+        outState.putString("photosAuthorizationAccount", pendingPhotosAuthorization)
+        pendingPhotosFile?.let { outState.putStringArray("photosFile", arrayOf(it.id, it.name, it.mimeType)) }
         outState.putString("uploadAccount", pendingUpload)
         outState.putString("uploadParent", pendingUploadParent)
         super.onSaveInstanceState(outState)
@@ -375,10 +378,9 @@ class MainActivity : ComponentActivity() {
         if (viewer != null) closePreview()
         ++generation
         pendingAuthorization = null
-        pendingPickerAuthorization = null
+        pendingPhotosAuthorization = null
         pendingUpload = null
         tab = 0
-        photosLoadedForAccount = null
         accountUi = accountUi.copy(active = entry, message = null)
         selection.edit().putString("active", entry.key).apply()
         model = Model(user = entry.name)
@@ -389,11 +391,6 @@ class MainActivity : ComponentActivity() {
         if (model.uploading || !isTabEnabled(accountUi.active?.type, next) || tab == next) return
         model = model.copy(path = emptyList(), files = emptyList(), fromCache = false)
         tab = next
-        val activeKey = accountUi.active?.key
-        if (next == 2 && activeKey != null && photosLoadedForAccount == activeKey) {
-            model = model.copy(loading = false, message = null)
-            return
-        }
         refresh()
     }
 
@@ -415,13 +412,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openSearchFolder(file: DriveFile) {
-        if (!file.isFolder || model.loading || tab == 3) return
+        if (!file.isFolder || model.loading || model.uploading || tab == 3) return
         model = model.copy(path = listOf(file), files = emptyList(), fromCache = false)
         refresh()
     }
 
     private fun openFolder(file: DriveFile) {
-        if (!file.isFolder || model.loading || tab == 3) return
+        if (!file.isFolder || model.loading || model.uploading || tab == 3) return
         model = model.copy(path = model.path + file, files = emptyList())
         refresh()
     }
@@ -443,16 +440,11 @@ class MainActivity : ComponentActivity() {
     private fun refresh(forceNetwork: Boolean = false) {
         val active = accountUi.active ?: return
         if (model.uploading) return
-        if (!forceNetwork && tab == 2 && photosLoadedForAccount == active.key) {
-            model = model.copy(loading = false, message = null)
-            return
-        }
         val request = ++generation
         val location = cacheLocation()
-        val useCache = tab != 2
         model = model.copy(loading = true, message = null)
         lifecycleScope.launch {
-            val cached = if (useCache) withContext(Dispatchers.IO) { listingCache.read(active.key, location) } else null
+            val cached = withContext(Dispatchers.IO) { listingCache.read(active.key, location) }
             if (request != generation) return@launch
             if (cached != null) {
                 model = model.copy(files = cached, loading = forceNetwork, fromCache = true)
@@ -484,7 +476,7 @@ class MainActivity : ComponentActivity() {
         }
         val request = ++generation
         model = model.copy(loading = true, message = null)
-        val scopes = listOf(Scope(DRIVE_SCOPE)) + if (tab == 2) listOf(Scope(PHOTOS_SCOPE)) else emptyList()
+        val scopes = listOf(Scope(DRIVE_SCOPE))
         authorization.authorize(AuthorizationRequest.builder().setAccount(Account(entry.id, "com.google"))
             .setRequestedScopes(scopes).build())
             .addOnSuccessListener { result ->
@@ -511,183 +503,103 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    if (selectedTab == 2) {
-                        val remote = PhotosApi.listAppCreatedMedia(token)
-                        val local = accountUi.active?.key?.let(::loadStoredPickerPhotos).orEmpty()
-                        Pair(emptyList<DriveFile>(), (remote + local).distinctBy { it.id })
-                    } else Pair(DriveApi.listFiles(token, sharedWithMe = selectedTab == 1 && parentId == null, parentId = parentId, trashed = selectedTab == 3), emptyList<PhotoItem>())
+                    DriveApi.listFiles(token, sharedWithMe = selectedTab == 1 && parentId == null, parentId = parentId, trashed = selectedTab == 3)
                 }
-            }.onSuccess { (files, photos) ->
+            }.onSuccess { files ->
                 if (request == generation) {
-                    model = model.copy(files = files, photos = photos, loading = false, fromCache = false)
-                    if (selectedTab == 2) photosLoadedForAccount = accountUi.active?.key
-                    else cacheFiles(files)
+                    model = model.copy(files = files, loading = false, fromCache = false)
+                    cacheFiles(files)
                 }
             }.onFailure { if (request == generation) error("Không thể tải dữ liệu Google. Hãy thử làm mới.") }
         }
     }
 
-    private fun pickAdditionalPhotos() {
-        val account = accountUi.active?.takeIf { tab == 2 && it.type == AccountType.GOOGLE } ?: return
-        val request = AuthorizationRequest.builder()
-            .setAccount(Account(account.id, "com.google"))
-            .setRequestedScopes(listOf(Scope(PHOTOS_PICKER_SCOPE)))
-            .build()
-        authorization.authorize(request)
-            .addOnSuccessListener { result ->
-                if (accountUi.active?.key != account.key || tab != 2) return@addOnSuccessListener
-                when {
-                    result.hasResolution() -> {
-                        pendingPickerAuthorization = account.key
-                        result.pendingIntent?.let {
-                            pickerAuthorizationResolution.launch(IntentSenderRequest.Builder(it.intentSender).build())
-                        } ?: Toast.makeText(this, "Không thể mở cấp quyền Google Photos Picker.", Toast.LENGTH_LONG).show()
+    private fun uploadToPhotos(file: DriveFile) {
+        if (model.uploading || model.loading) return
+        val source = accountUi.active ?: return
+        val destinations = accountUi.entries.filter { it.type == AccountType.GOOGLE }
+        if (destinations.isEmpty()) {
+            Toast.makeText(this, "Hãy thêm tài khoản Google để tải lên Google Photos.", Toast.LENGTH_LONG).show()
+            return
+        }
+        fun authorizeDestination(destination: AccountEntry) {
+            pendingPhotosFile = file
+            authorization.authorize(AuthorizationRequest.builder()
+                .setAccount(Account(destination.id, "com.google"))
+                .setRequestedScopes(listOf(Scope(PHOTOS_SCOPE))).build())
+                .addOnSuccessListener { result ->
+                    if (accountUi.active?.key != source.key) return@addOnSuccessListener
+                    when {
+                        result.hasResolution() -> {
+                            pendingPhotosAuthorization = source.key
+                            result.pendingIntent?.let {
+                                photosAuthorizationResolution.launch(IntentSenderRequest.Builder(it.intentSender).build())
+                            } ?: error("Không thể mở cấp quyền Google Photos.")
+                        }
+                        result.accessToken != null -> startPhotosUpload(file, result.accessToken!!)
+                        else -> error("Google không trả về quyền Photos.")
                     }
-                    result.accessToken != null -> startGooglePhotosPicker(account.key, result.accessToken!!)
-                    else -> Toast.makeText(this, "Google không trả về quyền Photos Picker.", Toast.LENGTH_LONG).show()
-                }
-            }
-            .addOnFailureListener {
-                Toast.makeText(this, "Không thể cấp quyền Google Photos Picker.", Toast.LENGTH_LONG).show()
-            }
+                }.addOnFailureListener { error("Không thể cấp quyền Google Photos.") }
+        }
+        if (source.type == AccountType.GOOGLE) authorizeDestination(source)
+        else android.app.AlertDialog.Builder(this).setTitle("Tài khoản Google Photos")
+            .setItems(destinations.map { it.id }.toTypedArray()) { _, index -> authorizeDestination(destinations[index]) }
+            .setNegativeButton("Hủy", null).show()
     }
 
-    private fun startGooglePhotosPicker(accountKey: String, accessToken: String) {
+    private fun startPhotosUpload(file: DriveFile, photosToken: String) {
+        if (model.uploading) return
+        val source = accountUi.active ?: return
+        val driveToken = model.token
+        val s3 = s3Accounts.accounts.firstOrNull { it.id == source.id }?.config
+        pendingPhotosFile = null
+        model = model.copy(uploading = true, message = "Đang chuẩn bị tải lên Google Photos…")
         lifecycleScope.launch {
-            var sessionId: String? = null
+            var uploaded = 0
+            var failed = 0
             try {
-                val session = withContext(Dispatchers.IO) { GooglePhotosPickerApi.createSession(accessToken) }
-                sessionId = session.id
-                if (accountUi.active?.key != accountKey || tab != 2) return@launch
-                require(session.pickerUri.isNotBlank()) { "Google Photos Picker không trả về pickerUri." }
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(session.pickerUri)))
-
-                val timeout = session.timeoutMillis.coerceAtMost(20 * 60_000L)
-                val deadline = System.currentTimeMillis() + timeout
-                var current = session
-                while (!current.mediaItemsSet && System.currentTimeMillis() < deadline) {
-                    delay(current.pollIntervalMillis.coerceIn(750L, 30_000L))
-                    current = withContext(Dispatchers.IO) { GooglePhotosPickerApi.getSession(accessToken, session.id) }
-                }
-                if (!current.mediaItemsSet) {
-                    Toast.makeText(this@MainActivity, "Phiên chọn Google Photos đã hết thời gian.", Toast.LENGTH_SHORT).show()
-                    return@launch
-                }
-
-                val picked = withContext(Dispatchers.IO) {
-                    GooglePhotosPickerApi.listPickedItems(accessToken, session.id)
-                }
-                if (picked.isEmpty()) {
-                    Toast.makeText(this@MainActivity, "Không có ảnh nào được chọn.", Toast.LENGTH_SHORT).show()
-                    return@launch
-                }
-
-                val stored = withContext(Dispatchers.IO) {
-                    persistGooglePhotosPickerItems(accountKey, accessToken, picked)
-                }
-                if (accountUi.active?.key == accountKey && tab == 2) {
-                    val remote = model.photos.filter { it.localPath == null }
-                    model = model.copy(photos = (remote + stored).distinctBy { it.id })
-                }
-                Toast.makeText(this@MainActivity, "Đã thêm ${picked.size} mục từ Google Photos.", Toast.LENGTH_SHORT).show()
-            } catch (t: Throwable) {
-                if (t is CancellationException) throw t
-                Toast.makeText(this@MainActivity,
-                    t.message ?: "Không thể mở Google Photos Picker.", Toast.LENGTH_LONG).show()
-            } finally {
-                sessionId?.let { id ->
-                    withContext(Dispatchers.IO) { runCatching { GooglePhotosPickerApi.deleteSession(accessToken, id) } }
-                }
-            }
-        }
-    }
-
-    private fun persistGooglePhotosPickerItems(
-        accountKey: String,
-        accessToken: String,
-        picked: List<GooglePhotosPickerApi.PickedItem>
-    ): List<PhotoItem> {
-        val existing = loadStoredPickerPhotos(accountKey).associateBy { it.id }.toMutableMap()
-        val directory = pickerPhotosDirectory(accountKey).apply { mkdirs() }
-        picked.forEach { item ->
-            val id = "gphotos-picker:${item.id}"
-            val extension = item.filename.substringAfterLast('.', "").lowercase()
-                .takeIf { it.matches(Regex("[a-z0-9]{1,8}")) }?.let { ".$it" }.orEmpty()
-            val fileName = java.security.MessageDigest.getInstance("SHA-256")
-                .digest(item.id.toByteArray()).joinToString("") { "%02x".format(it) } + extension
-            val target = File(directory, fileName)
-            if (!target.isFile || target.length() == 0L) {
-                val temporary = File(target.path + ".tmp")
-                temporary.delete()
-                try {
-                    GooglePhotosPickerApi.download(accessToken, item, temporary)
-                    if (!temporary.renameTo(target)) {
-                        temporary.copyTo(target, overwrite = true)
-                        temporary.delete()
+                withContext(Dispatchers.IO) {
+                    val album = if (file.isFolder) PhotosApi.createAlbum(photosToken, file.name) else null
+                    val queue = java.util.ArrayDeque<DriveFile>().apply { add(file) }
+                    val visited = mutableSetOf<String>()
+                    while (queue.isNotEmpty()) {
+                        val item = queue.removeFirst()
+                        if (!visited.add(item.id)) continue
+                        if (item.isFolder) {
+                            val children = if (source.type == AccountType.S3) S3Api.list(requireNotNull(s3), item.id)
+                                else DriveApi.listFiles(requireNotNull(driveToken), parentId = item.id)
+                            queue.addAll(children)
+                            continue
+                        }
+                        if (!item.mimeType.startsWith("image/") && !item.mimeType.startsWith("video/")) continue
+                        withContext(Dispatchers.Main) {
+                            model = model.copy(message = "Google Photos: đã tải $uploaded, lỗi $failed. Đang tải ${item.name}…")
+                        }
+                        val temporary = File.createTempFile("photos-upload-", ".tmp", cacheDir)
+                        try {
+                            if (source.type == AccountType.S3) S3Api.downloadTo(requireNotNull(s3), item.id, temporary)
+                            else DriveApi.downloadTo(requireNotNull(driveToken), item.id, temporary)
+                            PhotosApi.upload(photosToken, temporary, item.name, item.mimeType, album)
+                            uploaded++
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            failed++
+                        } finally {
+                            temporary.delete()
+                        }
                     }
-                } finally {
-                    temporary.delete()
                 }
+                model = model.copy(message = "Google Photos: đã tải $uploaded tệp, lỗi $failed tệp." +
+                    if (file.isFolder) " Album: ${file.name}." else "")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                model = model.copy(message = "Không thể hoàn tất tải lên Google Photos. Đã tải $uploaded tệp, lỗi $failed tệp.")
+            } finally {
+                model = model.copy(uploading = false)
             }
-            existing[id] = PhotoItem(
-                id = id,
-                filename = item.filename,
-                mimeType = item.mimeType,
-                baseUrl = null,
-                localPath = target.path,
-                createTime = item.createTime
-            )
         }
-        saveStoredPickerPhotos(accountKey, existing.values.toList())
-        return existing.values.toList()
-    }
-
-    private fun loadStoredPickerPhotos(accountKey: String): List<PhotoItem> {
-        val index = File(pickerPhotosDirectory(accountKey), "index.json")
-        if (!index.isFile) return emptyList()
-        val items = runCatching {
-            val array = org.json.JSONArray(index.readText(Charsets.UTF_8))
-            List(array.length()) { i ->
-                val item = array.getJSONObject(i)
-                PhotoItem(
-                    id = item.getString("id"),
-                    filename = item.optString("filename", "Google Photos media"),
-                    mimeType = item.optString("mimeType", "application/octet-stream"),
-                    baseUrl = null,
-                    localPath = item.optString("localPath").ifBlank { null },
-                    createTime = item.optString("createTime").ifBlank { null }
-                )
-            }
-        }.getOrDefault(emptyList())
-        val valid = items.filter { it.localPath?.let { path -> File(path).isFile } == true }
-        if (valid.size != items.size) saveStoredPickerPhotos(accountKey, valid)
-        return valid
-    }
-
-    private fun saveStoredPickerPhotos(accountKey: String, items: List<PhotoItem>) {
-        val directory = pickerPhotosDirectory(accountKey).apply { mkdirs() }
-        val array = org.json.JSONArray()
-        items.forEach { item ->
-            array.put(org.json.JSONObject()
-                .put("id", item.id)
-                .put("filename", item.filename)
-                .put("mimeType", item.mimeType)
-                .put("localPath", item.localPath)
-                .put("createTime", item.createTime))
-        }
-        val target = File(directory, "index.json")
-        val temporary = File(directory, "index.json.tmp")
-        temporary.writeText(array.toString(), Charsets.UTF_8)
-        if (!temporary.renameTo(target)) {
-            temporary.copyTo(target, overwrite = true)
-            temporary.delete()
-        }
-    }
-
-    private fun pickerPhotosDirectory(accountKey: String): File {
-        val hash = java.security.MessageDigest.getInstance("SHA-256")
-            .digest(accountKey.toByteArray()).joinToString("") { "%02x".format(it) }
-        return File(filesDir, "google-photos-picker/$hash")
     }
 
     private fun loadS3() {
@@ -790,7 +702,7 @@ class MainActivity : ComponentActivity() {
     private fun finishAdding(entry: AccountEntry, files: List<DriveFile>, token: String? = null) {
         ++generation
         pendingAuthorization = null
-        pendingPickerAuthorization = null
+        pendingPhotosAuthorization = null
         pendingUpload = null
         tab = 0
         selection.edit().putString("active", entry.key).apply()
@@ -1029,14 +941,13 @@ class MainActivity : ComponentActivity() {
         accountUi.active?.key?.let { key -> lifecycleScope.launch(Dispatchers.IO) { listingCache.clear(key) } }
         ++generation
         pendingAuthorization = null
-        pendingPickerAuthorization = null
+        pendingPhotosAuthorization = null
         pendingUpload = null
         serviceTokens.clear()
         googleStore.clearActive()
         selection.edit().putString("active", "").apply()
         accountUi = accountUi.copy(active = null)
         tab = 0
-        photosLoadedForAccount = null
         model = Model(message = "Đã đăng xuất.")
     }
 

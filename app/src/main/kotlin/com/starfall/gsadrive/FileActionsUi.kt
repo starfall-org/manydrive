@@ -115,6 +115,12 @@ private fun MainActions(
         ActionRow(Icons.Outlined.Edit, "Đổi tên", onRename)
         ActionRow(Icons.Outlined.DriveFileMove, "Di chuyển", onMove)
     }
+    if (actions.uploadToPhotos != null && (file.isFolder || file.mimeType.startsWith("image/") || file.mimeType.startsWith("video/"))) {
+        ActionRow(Icons.Outlined.AddPhotoAlternate, "Tải lên Google Photos") {
+            actions.uploadToPhotos.invoke(file)
+            onDismiss()
+        }
+    }
     ActionRow(Icons.Outlined.Info, "Xem thông tin", onInfo)
     if (driveActions && actions.trash != null) {
         ActionRow(Icons.Outlined.Delete, "Chuyển vào thùng rác") {

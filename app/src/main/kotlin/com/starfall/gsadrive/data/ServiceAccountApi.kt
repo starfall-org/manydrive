@@ -1,11 +1,7 @@
 package com.starfall.gsadrive.data
 
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URI
-import java.net.URLEncoder
 import java.security.KeyFactory
-import java.security.Signature
 import java.security.interfaces.RSAPrivateKey
 import java.security.spec.PKCS8EncodedKeySpec
 import kotlin.io.encoding.Base64
@@ -22,21 +18,14 @@ class ServiceAccountCredentials private constructor(
         .put("client_email", email).put("private_key", privateKeyPem)
         .put("private_key_id", keyId).put("token_uri", TOKEN_URI)
 
-    fun assertion(nowSeconds: Long): String {
-        fun encode(value: ByteArray) = Base64.UrlSafe.encode(value).trimEnd('=')
-        val header = JSONObject().put("alg", "RS256").put("typ", "JWT").apply {
-            if (keyId.isNotBlank()) put("kid", keyId)
-        }
-        val claims = JSONObject().put("iss", email).put("scope", "https://www.googleapis.com/auth/drive")
-            .put("aud", TOKEN_URI).put("iat", nowSeconds).put("exp", nowSeconds + 3600)
-        val unsigned = encode(header.toString().toByteArray(Charsets.UTF_8)) + "." +
-            encode(claims.toString().toByteArray(Charsets.UTF_8))
-        val signature = Signature.getInstance("SHA256withRSA").apply {
-            initSign(privateKey)
-            update(unsigned.toByteArray(Charsets.UTF_8))
-        }.sign()
-        return "$unsigned.${encode(signature)}"
-    }
+    internal fun sdkCredentials(): com.google.auth.oauth2.ServiceAccountCredentials =
+        com.google.auth.oauth2.ServiceAccountCredentials.newBuilder()
+            .setClientEmail(email)
+            .setPrivateKey(privateKey)
+            .apply { if (keyId.isNotBlank()) setPrivateKeyId(keyId) }
+            .setTokenServerUri(java.net.URI(TOKEN_URI))
+            .setScopes(listOf("https://www.googleapis.com/auth/drive"))
+            .build()
 
     override fun toString(): String = "ServiceAccountCredentials($email)"
 
@@ -74,27 +63,11 @@ class ServiceAccessToken(val value: String, val expiresAtSeconds: Long) {
 
 object ServiceAccountApi {
     fun accessToken(credentials: ServiceAccountCredentials): ServiceAccessToken {
-        val now = System.currentTimeMillis() / 1000
-        val payload = "grant_type=" + URLEncoder.encode("urn:ietf:params:oauth:grant-type:jwt-bearer", "UTF-8") +
-            "&assertion=" + URLEncoder.encode(credentials.assertion(now), "UTF-8")
-        val connection = (URI(ServiceAccountCredentials.TOKEN_URI).toURL().openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            instanceFollowRedirects = false
-            connectTimeout = 15_000
-            readTimeout = 30_000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+        val token = credentials.sdkCredentials().refreshAccessToken()
+        val expiration = requireNotNull(token.expirationTime) { "Google không trả về thời hạn token." }
+        check(token.tokenValue.isNotBlank()) {
+            "Google không trả về access token hợp lệ."
         }
-        try {
-            connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-            check(connection.responseCode in 200..299) {
-                "Google từ chối Service Account (${connection.responseCode}). Kiểm tra khóa và trạng thái tài khoản."
-            }
-            val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-            val token = json.optString("access_token")
-            val expiry = json.optLong("expires_in")
-            check(token.isNotBlank() && expiry in 1..3600) { "Google không trả về access token hợp lệ." }
-            return ServiceAccessToken(token, now + expiry)
-        } finally { connection.disconnect() }
+        return ServiceAccessToken(token.tokenValue, expiration.time / 1000)
     }
 }

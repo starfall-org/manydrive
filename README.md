@@ -16,7 +16,7 @@ Open this repository directly in Android Studio, then run the `app` configuratio
 ./gradlew :app:assembleDebug
 ```
 
-The project has no Flutter or Dart runtime. It uses a Kotlin/Jetpack Compose Material 3 interface, Google account picker, Google Identity authorization, and the Google Drive REST API.
+The project has no Flutter or Dart runtime. It uses a Kotlin/Jetpack Compose Material 3 interface, Google account picker, Google Identity authorization, and the official Google Drive Java SDK.
 
 ## Release builds on Codemagic
 
@@ -41,12 +41,18 @@ The app requests the full Google Drive scope to list both My Drive and shared fi
 
 ## Accounts and storage providers
 
-The profile button opens one account list for **Google**, **S3**, and **Service Account**. **Thêm tài khoản** offers these three connection types. Selecting any account replaces the active storage provider on the Files screen; there is no separate S3 tab. The selected account is restored on restart. All three tabs remain visible. Google enables Files, Shared and Photos; S3 enables only Files; Service Account enables Files and Shared. Unsupported tabs are disabled. For Google and Service Account, Files starts at the account's own Drive root and only lists items owned by that account there; incoming shared folders and files appear in Shared. A service account with only incoming shares therefore has an empty Files tab. Opening a folder in Shared lists its children by parent ID, including children accessible through inherited permissions.
+The profile button opens one account list for **Google**, **S3**, and **Service Account**. **Thêm tài khoản** offers these three connection types. Selecting any account replaces the active storage provider on the Files screen; there is no separate S3 tab. The selected account is restored on restart. Files and Shared remain visible. Google enables both; S3 enables only Files; Service Account enables Files and Shared. Unsupported tabs are disabled. For Google and Service Account, Files starts at the account's own Drive root and only lists items owned by that account there; incoming shared folders and files appear in Shared. A service account with only incoming shares therefore has an empty Files tab. Opening a folder in Shared lists its children by parent ID, including children accessible through inherited permissions.
 
-- **Google:** choose a Google account on the device and grant Drive access. Photos permission is requested when opening Photos.
+- **Google:** choose a Google account on the device and grant Drive access. Photos upload permission is requested from the “Tải lên Google Photos” file menu.
 - **S3:** enter a name, HTTPS endpoint, bucket, region and access keys in a dialog. The app verifies bucket access before saving. Multiple connections are supported.
 - **Service Account:** choose a Google service-account JSON key with Android's file picker. The app validates its type, email and RSA private key, obtains an OAuth token, and verifies Drive access before saving. Reimporting the same service-account email replaces its saved key. Enable Drive API in that account's project and share files with its `client_email`, or grant it access to a shared drive. Tokens refresh when needed during browsing. Domain-wide impersonation is not configured.
 
 S3 and Service Account currently display file listings. Service accounts have no personal Drive storage quota, so the app does not offer uploads into their root. See [Google's service account OAuth guide](https://developers.google.com/identity/protocols/oauth2/service-account) and [shared drive guidance](https://developers.google.com/workspace/drive/api/guides/about-shareddrives).
 
 Access keys and imported private keys are encrypted with AES-GCM using device-bound Android Keystore keys, in the app's no-backup directory. The JSON source is read once; its path is not retained. Existing S3 connections remain compatible with the encrypted storage format. Removing an account deletes its saved connection without deleting remote files. Signing out clears the active session while keeping saved accounts available in the account list. Reinstalling or moving to another device requires importing credentials again.
+
+## API clients
+
+Drive file operations use `google-api-services-drive`, with Google Auth Library for service-account JWT signing and token exchange. S3 uses the official AWS SDK for Kotlin. Access tokens are supplied separately for each Google client; upload/download content is streamed by the SDK.
+
+Google Photos uses the [Library REST API](https://developers.google.com/photos/library/guides/upload-media) through the official Google HTTP Client with `photoslibrary.appendonly`. There is no separate Photos browser or Picker. The “Tải lên Google Photos” menu is available for images, videos, and folders from Google Drive, S3, and Service Accounts. Google Drive uploads to the active Google account; other sources prompt for a connected Google destination. A folder creates an album with the same name and uploads images/videos recursively, skipping other files. Individual media files upload directly to the library. Transfers use temporary files, remove them after each upload, and report success/failure counts.

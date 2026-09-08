@@ -12,6 +12,14 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
+import androidx.media3.session.CommandButton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import androidx.media3.session.MediaSessionService
 import com.starfall.gsadrive.data.DriveApi
 import com.starfall.gsadrive.data.DriveFile
@@ -162,7 +170,18 @@ private class ManyDriveMediaDataSource : BaseDataSource(false) {
     }
 }
 
+/** Shared with the in-process viewer; playback policy is enforced by the service. */
+object PlaybackSettings {
+    private val slideshow = MutableStateFlow(true)
+    val slideshowEnabled = slideshow.asStateFlow()
+
+    fun setSlideshowEnabled(enabled: Boolean) {
+        slideshow.value = enabled
+    }
+}
+
 class MediaPlaybackService : MediaSessionService() {
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var mediaSession: MediaSession? = null
     private lateinit var player: ExoPlayer
 
@@ -171,9 +190,18 @@ class MediaPlaybackService : MediaSessionService() {
         val dataSourceFactory = DefaultDataSource.Factory(this, ManyDriveMediaDataSource.Factory())
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            // Legacy/system previous actions must skip tracks even after playback has progressed.
+            .setMaxSeekToPreviousPositionMs(Long.MAX_VALUE)
             .setSeekBackIncrementMs(10_000L)
             .setSeekForwardIncrementMs(10_000L)
             .build()
+
+        player.setPauseAtEndOfMediaItems(!PlaybackSettings.slideshowEnabled.value)
+        serviceScope.launch {
+            PlaybackSettings.slideshowEnabled.collect { enabled ->
+                player.setPauseAtEndOfMediaItems(!enabled)
+            }
+        }
 
         val launchIntent = Intent(this, MainActivity::class.java)
         val sessionActivity = PendingIntent.getActivity(
@@ -183,6 +211,22 @@ class MediaPlaybackService : MediaSessionService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         mediaSession = MediaSession.Builder(this, player)
+            .setMediaButtonPreferences(listOf(
+                CommandButton.Builder(CommandButton.ICON_PREVIOUS)
+                    .setDisplayName("Bài trước")
+                    .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                    .setSlots(CommandButton.SLOT_BACK)
+                    .build(),
+                CommandButton.Builder(CommandButton.ICON_PLAY)
+                    .setPlayerCommand(Player.COMMAND_PLAY_PAUSE)
+                    .setSlots(CommandButton.SLOT_CENTRAL)
+                    .build(),
+                CommandButton.Builder(CommandButton.ICON_NEXT)
+                    .setDisplayName("Bài tiếp theo")
+                    .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                    .setSlots(CommandButton.SLOT_FORWARD)
+                    .build()
+            ))
             .setSessionActivity(sessionActivity)
             .build()
     }
@@ -198,6 +242,7 @@ class MediaPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        serviceScope.cancel()
         mediaSession?.run {
             player.release()
             release()

@@ -28,7 +28,10 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import com.starfall.gsadrive.data.*
 import com.starfall.gsadrive.ui.FileViewerPage
-import com.starfall.gsadrive.ui.MediaMiniPlayer
+import com.starfall.gsadrive.ui.ExpandableMediaPlayer
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import com.starfall.gsadrive.ui.SettingsPage
 import com.starfall.gsadrive.ui.theme.ManyDriveTheme
 import com.starfall.gsadrive.ui.theme.ThemeMode
@@ -59,7 +62,6 @@ internal fun App(
     searchDrive: (String, (Result<List<DriveFile>>) -> Unit) -> Unit = { _, done -> done(Result.success(emptyList())) },
     openSearchFolder: (DriveFile) -> Unit = {},
     uploadFolder: () -> Unit = {},
-    pickAdditionalPhotos: () -> Unit = {},
     restoreFile: (DriveFile) -> Unit = {},
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     superDark: Boolean = false,
@@ -127,12 +129,14 @@ internal fun App(
         }
     }
     val tabs = listOf(
-        Tab("Tệp", Icons.Outlined.Folder), Tab("Chia sẻ", Icons.Outlined.People), Tab("Ảnh", Icons.Outlined.Image)
+        Tab("Tệp", Icons.Outlined.Folder), Tab("Chia sẻ", Icons.Outlined.People)
     )
     val openAccounts = { showAccounts = true }
     val viewerExpanded = viewer != null && !viewer.minimized
     val viewerBlack = viewerExpanded && viewer?.let { isSwipePreview(it.file) } == true
-    val miniViewer = viewer?.takeIf { it.minimized && isMediaPreview(it.file) && it.localPath != null }
+    val mediaViewer = viewer?.takeIf { isMediaPreview(it.file) && it.localPath != null && it.error == null }
+    var miniBounds by remember { mutableStateOf<Rect?>(null) }
+    var playerTopPadding by remember { mutableStateOf(0.dp) }
     val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
     val normalDarkBars = when (themeMode) {
         ThemeMode.DARK -> true
@@ -187,6 +191,7 @@ internal fun App(
             )
         }
     ) {
+        Box(Modifier.fillMaxSize()) {
         Scaffold(
             containerColor = if (viewerBlack) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.background,
             topBar = {
@@ -226,7 +231,6 @@ internal fun App(
                             Text(when {
                                 viewerExpanded -> viewer?.file?.name.orEmpty()
                                 selected == 3 -> "Thùng rác"
-                                selected == 2 -> "Ảnh"
                                 else -> "ManyDrive"
                             }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         },
@@ -257,13 +261,12 @@ internal fun App(
                 }
             },
             bottomBar = {
-                if (!viewerExpanded) Column {
-                    if (miniViewer != null && playback != null) {
-                        MediaMiniPlayer(
-                            player = playback,
-                            onExpand = expandViewer,
-                            onClose = closeViewer
-                        )
+                if (!viewerExpanded || mediaViewer != null) Column {
+                    if (mediaViewer != null && playback != null) {
+                        // Reserve and measure the compact slot; the video itself remains in the overlay.
+                        Spacer(Modifier.fillMaxWidth().height(72.dp).onGloballyPositioned {
+                            miniBounds = it.boundsInRoot()
+                        })
                     }
                     if (!showSettings) NavigationBar {
                         tabs.forEachIndexed { index, item ->
@@ -281,28 +284,6 @@ internal fun App(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         if (showFabMenu) {
-                            if (selected == 2 && active?.type == AccountType.GOOGLE) {
-                                ExtendedFloatingActionButton(
-                                    onClick = {
-                                        showFabMenu = false
-                                        pickAdditionalPhotos()
-                                    },
-                                    icon = { Icon(Icons.Outlined.AddPhotoAlternate, null) },
-                                    text = { Text("Chọn ảnh") },
-                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                            }
-                            ExtendedFloatingActionButton(
-                                onClick = {
-                                    showFabMenu = false
-                                    upload()
-                                },
-                                icon = { Icon(Icons.Outlined.UploadFile, null) },
-                                text = { Text("Tải lên") },
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
                             ExtendedFloatingActionButton(
                                 onClick = {
                                     showFabMenu = false
@@ -331,9 +312,10 @@ internal fun App(
                 }
             }
         ) { padding ->
+            SideEffect { playerTopPadding = padding.calculateTopPadding() }
             Box(Modifier.fillMaxSize()) {
                 when {
-                    viewerExpanded && viewer != null && playback != null -> FileViewerPage(
+                    viewerExpanded && mediaViewer == null && viewer != null && playback != null -> FileViewerPage(
                         padding = padding,
                         file = viewer.file,
                         localPath = viewer.localPath,
@@ -360,7 +342,6 @@ internal fun App(
                         val contentPadding = PaddingValues(0.dp)
                         when {
                             selected == 3 -> TrashPage(model, contentPadding, restoreFile)
-                            selected == 2 -> PhotosPage(model, contentPadding, openAccounts, authorize)
                             else -> FileBrowserPage(
                                 model = model,
                                 padding = contentPadding,
@@ -388,6 +369,24 @@ internal fun App(
                     )
                 }
             }
+        }
+        if (mediaViewer != null && playback != null) {
+            ExpandableMediaPlayer(
+                player = playback,
+                title = mediaViewer.file.name,
+                audioOnly = mediaViewer.file.mimeType.startsWith("audio/"),
+                minimized = mediaViewer.minimized,
+                topPadding = playerTopPadding,
+                miniBounds = miniBounds,
+                onMinimize = minimizeViewer,
+                onExpand = expandViewer,
+                onClose = closeViewer,
+                onSwipe = { next ->
+                    val index = mediaViewer.swipeIndex + if (next) 1 else -1
+                    if (index in mediaViewer.swipeQueue.indices) swipeViewer(index)
+                }
+            )
+        }
         }
     }
 
@@ -576,39 +575,6 @@ private fun TrashPage(
 }
 
 @Composable
-private fun PhotosPage(model: Model, padding: PaddingValues, signIn: () -> Unit, authorize: () -> Unit) {
-    LazyColumn(
-        Modifier.fillMaxSize().padding(padding),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item { Text("Google Photos", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold) }
-        item {
-            Text(
-                "Google chỉ cho phép app đọc ảnh do chính app tạo. Để chọn ảnh bất kỳ, cần dùng Google Photos Picker.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        if (model.user == null) item { FilledTonalButton(onClick = signIn) { Text("Thêm tài khoản") } }
-        else if (model.token == null) item { FilledTonalButton(onClick = authorize) { Text("Cho phép Photos") } }
-        items(model.photos, key = { it.id }) { photo ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Outlined.Image,
-                    null,
-                    tint = MaterialTheme.colorScheme.primary
-                ); Spacer(Modifier.width(16.dp)); Column {
-                Text(photo.filename); Text(
-                photo.mimeType,
-                style = MaterialTheme.typography.bodySmall
-            )
-            }
-            }
-        }
-    }
-}
-
-@Composable
 private fun S3AccountDialog(
     onDismiss: () -> Unit,
     loading: Boolean = false,
@@ -707,10 +673,7 @@ private val previewModel = Model(
     user = "Minh Anh",
     token = "preview-token",
     files = previewFiles,
-    photos = listOf(
-        PhotoItem("photo-1", "Hoàng hôn trên biển.jpg", "image/jpeg", null),
-        PhotoItem("photo-2", "Chuyến đi Đà Lạt.png", "image/png", null)
-    )
+
 )
 
 @Composable
@@ -774,18 +737,6 @@ private fun DriveLoadingPreview() = DrivePagePreviewContent(previewModel.copy(lo
 private fun DriveErrorPreview() = DrivePagePreviewContent(
     previewModel.copy(message = "Không thể tải danh sách tệp. Vui lòng thử lại.", files = emptyList())
 )
-
-@ScreenPreviews
-@Composable
-private fun PhotosPagePreview() {
-    PreviewSurface { PhotosPage(previewModel, PaddingValues(0.dp), {}, {}) }
-}
-
-@ScreenPreviews
-@Composable
-private fun PhotosSignedOutPreview() {
-    PreviewSurface { PhotosPage(Model(), PaddingValues(0.dp), {}, {}) }
-}
 
 @ScreenPreviews
 @Composable

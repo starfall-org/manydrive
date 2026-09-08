@@ -16,26 +16,21 @@ class ServiceAccountCredentialsTest {
         .put("token_uri", ServiceAccountCredentials.TOKEN_URI)
         .put("private_key", "-----BEGIN PRIVATE KEY-----\n${Base64.Default.encode(pair.private.encoded)}\n-----END PRIVATE KEY-----\n")
 
-    @Test fun assertionHasExpectedClaimsAndVerifiableRsaSignature() {
+    @Test fun officialCredentialsKeepIdentityKeyAndDriveScope() {
         val account = ServiceAccountCredentials.parse(json().toString())
-        val parts = account.assertion(1_800_000_000).split('.')
-        assertEquals(3, parts.size)
-        assertTrue(parts.none { '=' in it })
-        val header = JSONObject(String(java.util.Base64.getUrlDecoder().decode(parts[0])))
-        val claims = JSONObject(String(java.util.Base64.getUrlDecoder().decode(parts[1])))
-        assertEquals("RS256", header.getString("alg"))
-        assertEquals("example-key-id", header.getString("kid"))
-        assertEquals(account.email, claims.getString("iss"))
-        assertEquals(ServiceAccountCredentials.TOKEN_URI, claims.getString("aud"))
-        assertEquals("https://www.googleapis.com/auth/drive", claims.getString("scope"))
-        assertEquals(1_800_003_600L, claims.getLong("exp"))
-        assertEquals(1_800_000_000L, claims.getLong("iat"))
-        assertFalse(claims.has("sub"))
+        val sdk = account.sdkCredentials()
+        assertEquals(account.email, sdk.clientEmail)
+        assertEquals("example-key-id", sdk.privateKeyId)
+        assertArrayEquals(pair.private.encoded, sdk.privateKey.encoded)
+        assertEquals(setOf("https://www.googleapis.com/auth/drive"), sdk.scopes.toSet())
+        assertEquals(ServiceAccountCredentials.TOKEN_URI, sdk.tokenServerUri.toString())
+        assertNull(sdk.serviceAccountUser)
+        val data = "test payload".toByteArray()
         val verifier = Signature.getInstance("SHA256withRSA").apply {
             initVerify(pair.public)
-            update("${parts[0]}.${parts[1]}".toByteArray())
+            update(data)
         }
-        assertTrue(verifier.verify(java.util.Base64.getUrlDecoder().decode(parts[2])))
+        assertTrue(verifier.verify(sdk.sign(data)))
     }
 
     @Test fun rejectsOtherCredentialTypesAndNonGoogleTokenEndpoint() {
@@ -59,7 +54,7 @@ class ServiceAccountCredentialsTest {
         val account = ServiceAccountCredentials.parse(json().put("unexpected", "not retained").toString())
         assertFalse(account.toJson().has("unexpected"))
         val restored = ServiceAccountCredentials.parse(account.toJson().toString())
-        assertEquals(account.assertion(1234), restored.assertion(1234))
+        assertEquals(account.toJson().toString(), restored.toJson().toString())
         assertFalse(account.toString().contains("PRIVATE KEY"))
         assertFalse(account.toString().contains(Base64.Default.encode(pair.private.encoded)))
     }

@@ -37,17 +37,17 @@ android {
         }
     }
 
+    packaging {
+        resources {
+            excludes += setOf("META-INF/versions/9/OSGI-INF/MANIFEST.MF", "META-INF/INDEX.LIST")
+        }
+    }
+
     signingConfigs {
         create("release") {
             storeFile = System.getenv("CM_KEYSTORE_PATH")?.let { file(it) }
             storePassword = System.getenv("CM_KEYSTORE_PASSWORD")
             keyAlias = System.getenv("CM_KEY_ALIAS")
-    packaging {
-        resources {
-            excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
-        }
-    }
-
             keyPassword = System.getenv("CM_KEY_PASSWORD")
         }
     }
@@ -60,6 +60,15 @@ android {
 }
 
 dependencies {
+    implementation("com.google.apis:google-api-services-drive:v3-rev20260901-2.0.0") {
+        exclude(group = "org.apache.httpcomponents")
+    }
+    implementation("com.google.auth:google-auth-library-oauth2-http:1.52.0") {
+        exclude(group = "org.apache.httpcomponents")
+    }
+    implementation("com.google.http-client:google-http-client-gson:2.2.0") {
+        exclude(group = "org.apache.httpcomponents")
+    }
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
     // OkHttp 5.4+ requires compileSdk 36+ (5.5+ requires 37). Keep the

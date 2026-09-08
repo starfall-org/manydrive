@@ -2,11 +2,10 @@ package com.starfall.gsadrive
 
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.starfall.gsadrive.data.DriveFile
-import com.starfall.gsadrive.data.PhotoItem
 
 internal data class Model(
     val user: String? = null, val token: String? = null,
-    val files: List<DriveFile> = emptyList(), val photos: List<PhotoItem> = emptyList(),
+    val files: List<DriveFile> = emptyList(),
     val loading: Boolean = false, val message: String? = null,
     val path: List<DriveFile> = emptyList(),
     val fromCache: Boolean = false, val uploading: Boolean = false
@@ -49,7 +48,7 @@ internal enum class AccountType(val label: String) { GOOGLE("Google"), S3("S3"),
 internal fun isTabEnabled(type: AccountType?, index: Int): Boolean = when (index) {
     0 -> true
     1 -> type == AccountType.GOOGLE || type == AccountType.SERVICE
-    2 -> type == AccountType.GOOGLE
+    2 -> false
     3 -> type == AccountType.GOOGLE || type == AccountType.SERVICE
     else -> false
 }
@@ -84,6 +83,7 @@ internal data class Tab(val label: String, val icon: ImageVector)
 
 
 internal data class FileActionCallbacks(
+    val uploadToPhotos: ((DriveFile) -> Unit)? = null,
     val share: (DriveFile, String, String, (Result<Unit>) -> Unit) -> Unit = { _, _, _, done -> done(Result.failure(UnsupportedOperationException())) },
     val rename: (DriveFile, String, (Result<Unit>) -> Unit) -> Unit = { _, _, done -> done(Result.failure(UnsupportedOperationException())) },
     val loadPermissions: (DriveFile, (Result<List<com.starfall.gsadrive.data.DrivePermission>>) -> Unit) -> Unit = { _, done -> done(Result.failure(UnsupportedOperationException())) },

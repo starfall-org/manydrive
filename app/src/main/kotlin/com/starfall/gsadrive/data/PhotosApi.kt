@@ -1,40 +1,32 @@
 package com.starfall.gsadrive.data
 
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 
-data class PhotoItem(
-    val id: String,
-    val filename: String,
-    val mimeType: String,
-    val baseUrl: String?,
-    val localPath: String? = null,
-    val createTime: String? = null
-)
-
-/** Google Photos Library API now exposes only media created by this application. */
+/** Uploads media using the append-only Google Photos Library scope. */
 object PhotosApi {
-    fun listAppCreatedMedia(accessToken: String): List<PhotoItem> {
-        val connection = (URL("https://photoslibrary.googleapis.com/v1/mediaItems?pageSize=100").openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            setRequestProperty("Authorization", "Bearer $accessToken")
-            connectTimeout = 15_000
-            readTimeout = 30_000
-        }
-        val body = (if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream).bufferedReader().use { it.readText() }
-        if (connection.responseCode !in 200..299) error("Google Photos API (${connection.responseCode}): $body")
-        val items = JSONObject(body).optJSONArray("mediaItems") ?: return emptyList()
-        return List(items.length()) { index ->
-            items.getJSONObject(index).let {
-                PhotoItem(
-                    id = it.getString("id"),
-                    filename = it.optString("filename", "Không tên"),
-                    mimeType = it.optString("mimeType"),
-                    baseUrl = it.optString("baseUrl").ifBlank { null },
-                    createTime = it.optJSONObject("mediaMetadata")?.optString("creationTime")?.ifBlank { null }
-                )
-            }
+    fun createAlbum(accessToken: String, title: String): String {
+        val body = JSONObject().put("album", JSONObject().put("title", title))
+        return JSONObject(GoogleApiClient.request(accessToken, "POST",
+            "https://photoslibrary.googleapis.com/v1/albums", body.toString().toByteArray()).decodeToString()).getString("id")
+    }
+
+    fun upload(accessToken: String, file: java.io.File, filename: String, mimeType: String, albumId: String?) {
+        val request = GoogleApiClient.transport.createRequestFactory(GoogleApiClient.initializer(accessToken, 300_000))
+            .buildPostRequest(com.google.api.client.http.GenericUrl("https://photoslibrary.googleapis.com/v1/uploads"),
+                com.google.api.client.http.FileContent("application/octet-stream", file))
+        request.headers.set("X-Goog-Upload-Protocol", "raw")
+        request.headers.set("X-Goog-Upload-Content-Type", mimeType)
+        val response = request.execute()
+        val uploadToken = try { response.parseAsString().trim() } finally { response.disconnect() }
+        require(uploadToken.isNotEmpty()) { "Google Photos không trả về upload token." }
+        val body = JSONObject().put("newMediaItems", org.json.JSONArray().put(
+            JSONObject().put("simpleMediaItem", JSONObject().put("uploadToken", uploadToken).put("fileName", filename))))
+        albumId?.let { body.put("albumId", it) }
+        val result = JSONObject(GoogleApiClient.request(accessToken, "POST",
+            "https://photoslibrary.googleapis.com/v1/mediaItems:batchCreate", body.toString().toByteArray()).decodeToString())
+            .getJSONArray("newMediaItemResults").getJSONObject(0)
+        check(result.optJSONObject("status")?.optInt("code", 0) in listOf(null, 0) && result.has("mediaItem")) {
+            result.optJSONObject("status")?.optString("message") ?: "Không thể tạo mục Google Photos."
         }
     }
 }
