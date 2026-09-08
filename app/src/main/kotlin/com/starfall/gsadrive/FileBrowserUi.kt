@@ -49,7 +49,7 @@ internal fun DriveNavigationDrawer(
     val drawerWidth = (screenWidth - 56.dp).coerceAtLeast(240.dp).coerceAtMost(360.dp)
     ModalDrawerSheet(
         modifier = Modifier.fillMaxHeight().width(drawerWidth),
-        drawerShape = RoundedCornerShape(bottomEnd = 28.dp),
+        drawerShape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp),
         drawerContainerColor = MaterialTheme.colorScheme.surface
     ) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars)) {
