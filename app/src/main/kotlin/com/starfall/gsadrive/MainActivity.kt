@@ -108,6 +108,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.starfall.gsadrive.data.driveLoadError
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.android.gms.auth.api.identity.Identity
@@ -510,7 +511,15 @@ class MainActivity : ComponentActivity() {
                     model = model.copy(files = files, loading = false, fromCache = false)
                     cacheFiles(files)
                 }
-            }.onFailure { if (request == generation) error("Không thể tải dữ liệu Google. Hãy thử làm mới.") }
+            }.onFailure { failure ->
+                if (failure is kotlinx.coroutines.CancellationException) throw failure
+                if (request == generation) {
+                    val diagnostic = driveLoadError(failure)
+                    // Do not log exception messages: SDK HTTP errors may contain request URLs/bodies.
+                    android.util.Log.e("ManyDrive", diagnostic + "\n" + failure.stackTrace.take(12).joinToString("\n"))
+                    error(diagnostic)
+                }
+            }
         }
     }
 

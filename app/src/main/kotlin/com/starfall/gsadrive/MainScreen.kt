@@ -1,5 +1,7 @@
 package com.starfall.gsadrive
 
+import com.starfall.gsadrive.ui.CopyableError
+
 import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
@@ -399,10 +401,9 @@ internal fun App(
                     onMinimize = minimizeViewer,
                     onExpand = expandViewer,
                     onClose = closeViewer,
-                    onSwipe = { next ->
-                        val index = mediaViewer.swipeIndex + if (next) 1 else -1
-                        if (index in mediaViewer.swipeQueue.indices) swipeViewer(index)
-                    }
+                    queue = mediaViewer.swipeQueue,
+                    index = mediaViewer.swipeIndex,
+                    onSwipeTo = swipeViewer
                 )
             }
         }
@@ -498,7 +499,7 @@ private fun StoragePage(
             }
         }
         if (shared) item { Text("Chia sẻ với tôi", style = MaterialTheme.typography.titleMedium) }
-        model.message?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
+        model.message?.let { item { CopyableError(it, color = MaterialTheme.colorScheme.error) } }
         if (account != null && !model.loading && model.message == null && model.files.isEmpty()) item { Text("Chưa có tệp để hiển thị.") }
         items(model.files, key = { it.id }) { FileRow(it, onOpen = openFolder, onPreview = openFile, enabled = !model.loading) }
     }
@@ -567,7 +568,7 @@ private fun DrivePage(
                 }
             }
         }
-        model.message?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
+        model.message?.let { item { CopyableError(it, color = MaterialTheme.colorScheme.error) } }
         if (!model.loading && model.token != null && model.files.isEmpty()) item { Text("Không có tệp trong vị trí này.") }
         items(model.files, key = { it.id }) { FileRow(it, trash, openFolder, !model.loading, onPreview = openFile) }
     }
@@ -584,7 +585,7 @@ private fun TrashPage(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        model.message?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
+        model.message?.let { item { CopyableError(it, color = MaterialTheme.colorScheme.error) } }
         if (!model.loading && model.message == null && model.files.isEmpty()) item { Text("Thùng rác đang trống.") }
         items(model.files, key = { it.id }) { file ->
             FileRow(file = file, enabled = false, onRestore = restore)
@@ -614,7 +615,7 @@ private fun S3AccountDialog(
         title = { Text("Thêm tài khoản S3") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                message?.let { CopyableError(it, color = MaterialTheme.colorScheme.error) }
                 if (loading) Loading()
                 OutlinedTextField(name, { name = it }, label = { Text("Tên tài khoản") }, enabled = !loading, singleLine = true)
                 OutlinedTextField(endpoint, { endpoint = it }, label = { Text("Endpoint HTTPS") }, enabled = !loading, singleLine = true)

@@ -14,7 +14,9 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
-import androidx.media3.session.CommandButton
+import androidx.media3.session.DefaultMediaNotificationProvider
+import androidx.media3.session.MediaConstants
+import android.os.Bundle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -173,6 +175,17 @@ private class ManyDriveMediaDataSource : BaseDataSource(false) {
     }
 }
 
+/** Stable account/file IDs keep resume positions independent of playlist order. */
+internal object PlaybackProgress {
+    fun read(context: android.content.Context, id: String): Long =
+        context.getSharedPreferences("playback_progress", android.content.Context.MODE_PRIVATE).getLong(id, 0L)
+
+    fun save(context: android.content.Context, id: String?, position: Long) {
+        if (!id.isNullOrBlank()) context.getSharedPreferences("playback_progress", android.content.Context.MODE_PRIVATE)
+            .edit().putLong(id, position.coerceAtLeast(0L)).apply()
+    }
+}
+
 /** Shared with the in-process viewer; playback policy is enforced by the service. */
 object PlaybackSettings {
     private val slideshow = MutableStateFlow(true)
@@ -191,6 +204,9 @@ class MediaPlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        setMediaNotificationProvider(DefaultMediaNotificationProvider(this).apply {
+            setSmallIcon(R.drawable.ic_notification)
+        })
         val dataSourceFactory = DefaultDataSource.Factory(this, ManyDriveMediaDataSource.Factory())
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
@@ -199,6 +215,34 @@ class MediaPlaybackService : MediaSessionService() {
             .setSeekBackIncrementMs(10_000L)
             .setSeekForwardIncrementMs(10_000L)
             .build()
+
+        player.addListener(object : Player.Listener {
+            override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+                val oldId = oldPosition.mediaItem?.mediaId
+                val newId = newPosition.mediaItem?.mediaId
+                if (oldId != newId) {
+                    PlaybackProgress.save(this@MediaPlaybackService, oldId,
+                        if (reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION) 0L else oldPosition.positionMs)
+                    if (newId != null) {
+                        val resume = PlaybackProgress.read(this@MediaPlaybackService, newId)
+                        if (resume > 0L) player.seekTo(resume)
+                    }
+                }
+            }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED) PlaybackProgress.save(this@MediaPlaybackService, player.currentMediaItem?.mediaId, 0L)
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (!isPlaying && player.playbackState != Player.STATE_ENDED)
+                    PlaybackProgress.save(this@MediaPlaybackService, player.currentMediaItem?.mediaId, player.currentPosition)
+            }
+        })
+        serviceScope.launch {
+            while (true) {
+                if (player.isPlaying) PlaybackProgress.save(this@MediaPlaybackService, player.currentMediaItem?.mediaId, player.currentPosition)
+                kotlinx.coroutines.delay(1000)
+            }
+        }
 
         player.setPauseAtEndOfMediaItems(!PlaybackSettings.slideshowEnabled.value)
         serviceScope.launch {
@@ -215,22 +259,12 @@ class MediaPlaybackService : MediaSessionService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         mediaSession = MediaSession.Builder(this, player)
-            .setMediaButtonPreferences(listOf(
-                CommandButton.Builder(CommandButton.ICON_PREVIOUS)
-                    .setDisplayName("Bài trước")
-                    .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
-                    .setSlots(CommandButton.SLOT_BACK)
-                    .build(),
-                CommandButton.Builder(CommandButton.ICON_PLAY)
-                    .setPlayerCommand(Player.COMMAND_PLAY_PAUSE)
-                    .setSlots(CommandButton.SLOT_CENTRAL)
-                    .build(),
-                CommandButton.Builder(CommandButton.ICON_NEXT)
-                    .setDisplayName("Bài tiếp theo")
-                    .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
-                    .setSlots(CommandButton.SLOT_FORWARD)
-                    .build()
-            ))
+            // Use the platform's native previous/play/next transport actions. Reserve
+            // both side slots so an unavailable previous action cannot move next left.
+            .setSessionExtras(Bundle().apply {
+                putBoolean(MediaConstants.EXTRAS_KEY_SLOT_RESERVATION_SEEK_TO_PREV, true)
+                putBoolean(MediaConstants.EXTRAS_KEY_SLOT_RESERVATION_SEEK_TO_NEXT, true)
+            })
             .setSessionActivity(sessionActivity)
             .build()
     }
@@ -246,6 +280,7 @@ class MediaPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        if (player.playbackState != Player.STATE_ENDED) PlaybackProgress.save(this, player.currentMediaItem?.mediaId, player.currentPosition)
         serviceScope.cancel()
         mediaSession?.run {
             player.release()

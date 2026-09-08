@@ -147,9 +147,9 @@ internal class ViewerCoordinator(
             return
         }
 
-        val sources = mediaQueue.mapIndexed { index, item ->
+        val sources = mediaQueue.map { item ->
             PlaybackSource(
-                mediaId = "${account.key}:$index:${item.id}",
+                mediaId = "${account.key}:${item.id}",
                 file = item,
                 accountType = account.type.name,
                 accessToken = token,
@@ -184,7 +184,14 @@ internal class ViewerCoordinator(
                 controller to items
             }.onSuccess { (controller, items) ->
                 if (request == generation && state?.file?.id == file.id) {
-                    controller.setMediaItems(items, mediaIndex, 0L)
+                    val existingIndex = (0 until controller.mediaItemCount).firstOrNull {
+                        controller.getMediaItemAt(it).mediaId == items[mediaIndex].mediaId
+                    }
+                    if (existingIndex != null && controller.mediaItemCount == items.size &&
+                        items.indices.all { controller.getMediaItemAt(it).mediaId == items[it].mediaId })
+                        controller.seekTo(existingIndex, if (controller.currentMediaItem?.mediaId == items[mediaIndex].mediaId)
+                            controller.currentPosition else PlaybackProgress.read(context, items[mediaIndex].mediaId))
+                    else controller.setMediaItems(items, mediaIndex, PlaybackProgress.read(context, items[mediaIndex].mediaId))
                     controller.prepare()
                     controller.play()
                 }

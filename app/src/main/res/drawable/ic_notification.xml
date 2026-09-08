@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Same ManyDrive mark as the launcher, framed for the notification/status-bar size. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <group android:translateX="-22" android:translateY="-22">
+        <path android:fillColor="#FFFFFF" android:pathData="M26 76V36Q26 32 30 32H36L54 50L72 32H78Q82 32 82 36V76H68V53L54 67L40 53V76Z" />
+    </group>
+</vector>

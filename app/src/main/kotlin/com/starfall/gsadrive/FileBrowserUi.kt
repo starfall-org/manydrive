@@ -1,5 +1,7 @@
 package com.starfall.gsadrive
 
+import com.starfall.gsadrive.ui.CopyableError
+
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -50,7 +52,7 @@ internal fun DriveNavigationDrawer(
     ModalDrawerSheet(
         modifier = Modifier.fillMaxHeight().width(drawerWidth),
         drawerShape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp),
-        drawerContainerColor = MaterialTheme.colorScheme.surface
+        drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars)) {
             Row(
@@ -363,10 +365,10 @@ internal fun FileBrowserPage(
         }
 
         model.message?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
+            CopyableError(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
         }
         searchError?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
+            CopyableError(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
         }
         if (searchLoading) {
             LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp))

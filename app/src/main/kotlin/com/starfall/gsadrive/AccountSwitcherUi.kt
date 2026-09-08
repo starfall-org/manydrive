@@ -1,5 +1,7 @@
 package com.starfall.gsadrive
 
+import com.starfall.gsadrive.ui.CopyableError
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -62,7 +64,7 @@ internal fun AccountSwitcherDialog(
                     }
 
                     accounts.message?.let {
-                        Text(
+                        CopyableError(
                             it,
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall,

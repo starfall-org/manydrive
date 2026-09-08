@@ -1,5 +1,16 @@
 package com.starfall.gsadrive.ui
 
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Replay10
+import androidx.compose.material.icons.outlined.Forward10
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import android.graphics.BitmapFactory
 import android.view.LayoutInflater
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -222,7 +233,7 @@ private fun ViewerContent(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(error, color = MaterialTheme.colorScheme.error)
+                CopyableError(error)
                 FilledTonalButton(onClick = onBack) { Text("Đóng") }
             }
             text != null -> TextEditor(text, saving, onTextChange, onSaveText)
@@ -311,6 +322,13 @@ internal fun MediaViewer(
     onExpand: () -> Unit = {},
     onClose: () -> Unit = {}
 ) {
+    var controlsVisible by remember(player) { mutableStateOf(true) }
+    var interactionVersion by remember { mutableLongStateOf(0L) }
+    var settingsOpen by remember { mutableStateOf(false) }
+    var playing by remember(player) { mutableStateOf(player.isPlaying) }
+    var playRequested by remember(player) { mutableStateOf(player.playWhenReady) }
+    val controlsInteraction = remember { MutableInteractionSource() }
+    val controlsPressed by controlsInteraction.collectIsPressedAsState()
     val compact = compactFraction > 0.85f
     val currentCompact by rememberUpdatedState(compact)
     val currentExpand by rememberUpdatedState(onExpand)
@@ -323,9 +341,18 @@ internal fun MediaViewer(
     var feedback by remember(player) { mutableStateOf<String?>(null) }
     var feedbackVersion by remember(player) { mutableLongStateOf(0L) }
 
+    LaunchedEffect(controlsVisible, interactionVersion, playing, dragging, settingsOpen, controlsPressed, compact) {
+        if (controlsVisible && playing && !dragging && !settingsOpen && !controlsPressed && !compact) {
+            delay(3000)
+            controlsVisible = false
+        }
+    }
+
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onEvents(player: Player, events: Player.Events) {
+                playing = player.isPlaying
+                playRequested = player.playWhenReady
                 duration = player.duration.coerceAtLeast(0L)
                 position = player.currentPosition.coerceAtLeast(0L)
                 seekable = player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM) &&
@@ -376,7 +403,7 @@ internal fun MediaViewer(
         )
         Box(
             Modifier.fillMaxSize().pointerInput(player) {
-                detectTapGestures(onTap = { if (currentCompact) currentExpand() }, onDoubleTap = { offset ->
+                detectTapGestures(onTap = { if (currentCompact) currentExpand() else { controlsVisible = !controlsVisible; interactionVersion++ } }, onDoubleTap = { offset ->
                     if (currentCompact) {
                         currentExpand()
                     } else if (player.isCurrentMediaItemSeekable &&
@@ -397,7 +424,7 @@ internal fun MediaViewer(
             }
         }
         feedback?.let {
-            Text(it, Modifier.align(Alignment.Center).background(Color.Black.copy(alpha = 0.7f)).padding(16.dp),
+            Text(it, Modifier.align(Alignment.Center).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))).padding(horizontal = 20.dp, vertical = 12.dp),
                 color = Color.White)
         }
         if (compact) {
@@ -412,18 +439,53 @@ internal fun MediaViewer(
                 }
             }
         }
-        if (compactFraction < 0.5f) Column(
+        if (compactFraction < 0.5f && controlsVisible) Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                 .graphicsLayer { alpha = (1f - compactFraction * 2f).coerceIn(0f, 1f) }
-                .background(Color.Black.copy(alpha = 0.7f)).padding(16.dp),
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))).padding(horizontal = 20.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            CompositionLocalProvider(LocalContentColor provides Color.White) {
-                PlayPauseButton(player)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, Modifier.weight(1f), color = Color.White, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+                Box {
+                    IconButton(onClick = { settingsOpen = true; interactionVersion++ }) {
+                        Icon(Icons.Outlined.Settings, "Cài đặt phát", tint = Color.White)
+                    }
+                    DropdownMenu(expanded = settingsOpen, onDismissRequest = { settingsOpen = false; interactionVersion++ }) {
+                        DropdownMenuItem(text = { Text("Tự động chuyển bài") },
+                            trailingIcon = { Switch(checked = slideshowEnabled, onCheckedChange = {
+                                PlaybackSettings.setSlideshowEnabled(it); interactionVersion++
+                            }) },
+                            onClick = { PlaybackSettings.setSlideshowEnabled(!slideshowEnabled); interactionVersion++ })
+                    }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                IconButton(enabled = seekable, onClick = { player.seekBack(); interactionVersion++ }) {
+                    Icon(Icons.Outlined.Replay10, "Lùi 10 giây", tint = Color.White)
+                }
+                CompositionLocalProvider(LocalContentColor provides Color.White) {
+                    IconButton(onClick = {
+                        if (player.playWhenReady && player.playbackState != Player.STATE_ENDED) player.pause()
+                        else {
+                            if (player.playbackState == Player.STATE_ENDED) player.seekTo(0)
+                            player.play()
+                        }
+                        interactionVersion++
+                    }, modifier = Modifier.size(56.dp), interactionSource = controlsInteraction) {
+                        Icon(if (playRequested && player.playbackState != Player.STATE_ENDED) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                            if (playRequested && player.playbackState != Player.STATE_ENDED) "Tạm dừng" else "Phát",
+                            modifier = Modifier.size(40.dp))
+                    }
+                }
+                IconButton(enabled = seekable, onClick = { player.seekForward(); interactionVersion++ }) {
+                    Icon(Icons.Outlined.Forward10, "Tiến 10 giây", tint = Color.White)
+                }
             }
             Slider(
                 value = if (dragging) scrubPosition else position.toFloat().coerceIn(0f, duration.toFloat()),
-                onValueChange = { dragging = true; scrubPosition = it },
+                onValueChange = { dragging = true; scrubPosition = it; interactionVersion++ },
                 onValueChangeFinished = {
                     player.seekTo(scrubPosition.toLong().coerceIn(0L, duration))
                     dragging = false
@@ -436,12 +498,7 @@ internal fun MediaViewer(
                 Text(mediaTime(if (dragging) scrubPosition.toLong() else position), color = Color.White)
                 Text(mediaTime(duration), color = Color.White)
             }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Trình chiếu", color = Color.White)
-                Switch(checked = slideshowEnabled, onCheckedChange = PlaybackSettings::setSlideshowEnabled,
-                    modifier = Modifier.semantics { contentDescription = "Tự động phát bài tiếp theo" })
-            }
+
         }
     }
 }

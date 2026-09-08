@@ -1,5 +1,7 @@
 package com.starfall.gsadrive
 
+import com.starfall.gsadrive.ui.CopyableError
+
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -162,7 +164,7 @@ private fun ShareDialog(file: DriveFile, actions: FileActionCallbacks, onDismiss
                     RadioButton(selected = role == "writer", onClick = { role = "writer" }, enabled = !busy)
                     Text("Người chỉnh sửa")
                 }
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                error?.let { CopyableError(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             }
         },
@@ -191,7 +193,7 @@ private fun RenameDialog(file: DriveFile, actions: FileActionCallbacks, onDismis
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(name, { name = it }, label = { Text("Tên mới") }, singleLine = true,
                     enabled = !busy, modifier = Modifier.fillMaxWidth())
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                error?.let { CopyableError(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             }
         },
@@ -228,7 +230,7 @@ private fun PermissionsPanel(file: DriveFile, actions: FileActionCallbacks, onBa
         Text("Quản lý quyền truy cập", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
     }
     if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-    error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(20.dp)) }
+    error?.let { CopyableError(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(20.dp)) }
     if (!loading && error == null && permissions.isEmpty()) {
         Text("Chưa có quyền chia sẻ riêng.", modifier = Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -284,7 +286,7 @@ private fun MovePanel(file: DriveFile, actions: FileActionCallbacks, onBack: () 
         }
     }
     if (loading || moving) LinearProgressIndicator(Modifier.fillMaxWidth())
-    error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) }
+    error?.let { CopyableError(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) }
     LazyColumn(Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 380.dp)) {
         items(folders, key = { it.id }) { folder ->
             ListItem(
