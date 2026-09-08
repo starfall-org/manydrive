@@ -1,0 +1,11 @@
+{
+  "hosting": {
+    "site": "manydrive",
+    "public": "public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  }
+}
