@@ -17,16 +17,36 @@ data class DriveFile(
     val thumbnailUrl: String? = null,
     val webViewUrl: String? = null,
     val parents: List<String> = emptyList(),
-    val trashed: Boolean = false
+    val trashed: Boolean = false,
+    val sharedWithMeTime: String? = null
 ) {
     val isFolder get() = mimeType == "application/vnd.google-apps.folder"
     val description get() = if (isFolder) "Thư mục" else "Đã sửa đổi ${modifiedTime?.replace("T", " ")?.substringBefore(".") ?: "gần đây"}"
 }
 
+data class DriveUserProfile(val displayName: String?, val photoLink: String?)
+
+data class DrivePermission(
+    val id: String,
+    val type: String,
+    val role: String,
+    val emailAddress: String?,
+    val displayName: String?
+)
+
+
 object DriveApi {
-    fun displayName(accessToken: String): String? = JSONObject(request(accessToken, "GET",
-        "https://www.googleapis.com/drive/v3/about?fields=user(displayName)").decodeToString())
-        .optJSONObject("user")?.optString("displayName")?.trim()?.takeIf { it.isNotEmpty() }
+    fun accountProfile(accessToken: String): DriveUserProfile {
+        val user = JSONObject(request(accessToken, "GET",
+            "https://www.googleapis.com/drive/v3/about?fields=user(displayName,photoLink)").decodeToString())
+            .optJSONObject("user")
+        return DriveUserProfile(
+            displayName = user?.optString("displayName")?.trim()?.takeIf { it.isNotEmpty() },
+            photoLink = user?.optString("photoLink")?.trim()?.takeIf { it.isNotEmpty() }
+        )
+    }
+
+    fun displayName(accessToken: String): String? = accountProfile(accessToken).displayName
 
     fun listFiles(accessToken: String, sharedWithMe: Boolean = false, trashed: Boolean = false, parentId: String? = null): List<DriveFile> {
         val query = when {
@@ -38,7 +58,7 @@ object DriveApi {
         val files = mutableListOf<DriveFile>()
         var pageToken: String? = null
         do {
-            val fields = "nextPageToken,files(id,name,mimeType,modifiedTime,size,thumbnailLink,webViewLink,parents,trashed)"
+            val fields = "nextPageToken,files(id,name,mimeType,modifiedTime,size,thumbnailLink,webViewLink,parents,trashed,sharedWithMeTime)"
             val page = pageToken?.let { "&pageToken=${URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
             val address = "https://www.googleapis.com/drive/v3/files?q=${URLEncoder.encode(query, "UTF-8")}&supportsAllDrives=true&includeItemsFromAllDrives=true&orderBy=folder,modifiedTime%20desc&pageSize=100&fields=$fields$page"
             val response = JSONObject(request(accessToken, "GET", address).decodeToString())
@@ -61,7 +81,7 @@ object DriveApi {
 
     fun move(accessToken: String, file: DriveFile, newParentId: String) {
         val removeParents = file.parents.joinToString(",")
-        request(accessToken, "PATCH", "https://www.googleapis.com/drive/v3/files/${file.id}?addParents=$newParentId&removeParents=${URLEncoder.encode(removeParents, "UTF-8")}", ByteArray(0), null)
+        request(accessToken, "PATCH", "https://www.googleapis.com/drive/v3/files/${file.id}?supportsAllDrives=true&addParents=${URLEncoder.encode(newParentId, "UTF-8")}&removeParents=${URLEncoder.encode(removeParents, "UTF-8")}", ByteArray(0), null)
     }
 
     fun copy(accessToken: String, file: DriveFile, newParentId: String) {
@@ -72,6 +92,34 @@ object DriveApi {
     fun share(accessToken: String, fileId: String, email: String, role: String) {
         val permission = JSONObject().put("type", "user").put("role", role).put("emailAddress", email)
         request(accessToken, "POST", "https://www.googleapis.com/drive/v3/files/$fileId/permissions?sendNotificationEmail=true", permission.toString().toByteArray(), "application/json")
+    }
+
+    fun rename(accessToken: String, fileId: String, newName: String) {
+        val body = JSONObject().put("name", newName.trim())
+        request(accessToken, "PATCH",
+            "https://www.googleapis.com/drive/v3/files/$fileId?supportsAllDrives=true",
+            body.toString().toByteArray(), "application/json")
+    }
+
+    fun listPermissions(accessToken: String, fileId: String): List<DrivePermission> {
+        val body = JSONObject(request(accessToken, "GET",
+            "https://www.googleapis.com/drive/v3/files/$fileId/permissions?supportsAllDrives=true&fields=permissions(id,type,role,emailAddress,displayName)").decodeToString())
+        val items = body.optJSONArray("permissions") ?: return emptyList()
+        return List(items.length()) { index ->
+            val item = items.getJSONObject(index)
+            DrivePermission(
+                id = item.getString("id"),
+                type = item.optString("type"),
+                role = item.optString("role"),
+                emailAddress = item.optString("emailAddress").ifBlank { null },
+                displayName = item.optString("displayName").ifBlank { null }
+            )
+        }
+    }
+
+    fun deletePermission(accessToken: String, fileId: String, permissionId: String) {
+        request(accessToken, "DELETE",
+            "https://www.googleapis.com/drive/v3/files/$fileId/permissions/$permissionId?supportsAllDrives=true")
     }
 
     fun restore(accessToken: String, fileId: String) {
@@ -165,6 +213,7 @@ object DriveApi {
         id = getString("id"), name = optString("name", "Không tên"), mimeType = optString("mimeType"),
         modifiedTime = optString("modifiedTime").ifBlank { null }, size = optString("size").toLongOrNull(),
         thumbnailUrl = optString("thumbnailLink").ifBlank { null }, webViewUrl = optString("webViewLink").ifBlank { null },
-        parents = optJSONArray("parents")?.let { parents -> List(parents.length()) { parents.getString(it) } } ?: emptyList(), trashed = optBoolean("trashed")
+        parents = optJSONArray("parents")?.let { parents -> List(parents.length()) { parents.getString(it) } } ?: emptyList(),
+        trashed = optBoolean("trashed"), sharedWithMeTime = optString("sharedWithMeTime").ifBlank { null }
     )
 }

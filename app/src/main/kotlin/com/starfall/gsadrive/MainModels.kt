@@ -20,8 +20,8 @@ internal data class ViewerState(
     val saving: Boolean = false,
     val error: String? = null,
     val minimized: Boolean = false,
-    val mediaQueue: List<DriveFile> = emptyList(),
-    val mediaIndex: Int = -1
+    val swipeQueue: List<DriveFile> = emptyList(),
+    val swipeIndex: Int = -1
 )
 
 internal const val MAX_TEXT_PREVIEW_BYTES = 4L * 1024 * 1024
@@ -39,6 +39,9 @@ internal fun isTextPreview(file: DriveFile): Boolean {
 internal fun isMediaPreview(file: DriveFile): Boolean =
     file.mimeType.startsWith("video/") || file.mimeType.startsWith("audio/")
 
+internal fun isSwipePreview(file: DriveFile): Boolean =
+    file.mimeType.startsWith("image/") || isMediaPreview(file)
+
 internal fun isPreviewable(file: DriveFile): Boolean =
     !file.isFolder && (file.mimeType.startsWith("image/") || isMediaPreview(file) || isTextPreview(file))
 
@@ -51,10 +54,23 @@ internal fun isTabEnabled(type: AccountType?, index: Int): Boolean = when (index
     else -> false
 }
 
-internal data class AccountEntry(val type: AccountType, val id: String, val name: String, val detail: String = "") {
+internal data class AccountEntry(
+    val type: AccountType,
+    val id: String,
+    val name: String,
+    val detail: String = "",
+    val avatarUrl: String? = null,
+    val endpointUrl: String? = null
+) {
     val key: String get() = "${type.name}:$id"
-    val title: String get() = if (type == AccountType.S3) detail.ifBlank { name } else name.substringBefore('@')
-    val subtitle: String get() = if (type == AccountType.S3) name else id
+    val title: String get() = when (type) {
+        AccountType.S3 -> detail.ifBlank { name }
+        AccountType.GOOGLE, AccountType.SERVICE -> name.ifBlank { id }.substringBefore('@')
+    }
+    val subtitle: String get() = when (type) {
+        AccountType.S3 -> endpointUrl?.takeIf { it.isNotBlank() } ?: name
+        AccountType.GOOGLE, AccountType.SERVICE -> id
+    }
 }
 internal data class AccountUi(
     val entries: List<AccountEntry> = emptyList(),
@@ -66,3 +82,13 @@ internal data class AccountUi(
 
 internal data class Tab(val label: String, val icon: ImageVector)
 
+
+internal data class FileActionCallbacks(
+    val share: (DriveFile, String, String, (Result<Unit>) -> Unit) -> Unit = { _, _, _, done -> done(Result.failure(UnsupportedOperationException())) },
+    val rename: (DriveFile, String, (Result<Unit>) -> Unit) -> Unit = { _, _, done -> done(Result.failure(UnsupportedOperationException())) },
+    val loadPermissions: (DriveFile, (Result<List<com.starfall.gsadrive.data.DrivePermission>>) -> Unit) -> Unit = { _, done -> done(Result.failure(UnsupportedOperationException())) },
+    val removePermission: (DriveFile, com.starfall.gsadrive.data.DrivePermission, (Result<Unit>) -> Unit) -> Unit = { _, _, done -> done(Result.failure(UnsupportedOperationException())) },
+    val loadFolders: (String?, (Result<List<DriveFile>>) -> Unit) -> Unit = { _, done -> done(Result.failure(UnsupportedOperationException())) },
+    val move: (DriveFile, String, (Result<Unit>) -> Unit) -> Unit = { _, _, done -> done(Result.failure(UnsupportedOperationException())) },
+    val trash: ((DriveFile) -> Unit)? = null
+)

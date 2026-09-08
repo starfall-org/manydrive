@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,6 +42,7 @@ import androidx.media3.ui.PlayerView
 import androidx.media3.ui.compose.material3.MiniController
 import androidx.media3.ui.compose.material3.buttons.PlayPauseButton
 import com.starfall.gsadrive.data.DriveFile
+import com.starfall.gsadrive.isSwipePreview
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -53,12 +55,33 @@ fun FileViewerPage(
     error: String?,
     saving: Boolean,
     player: Player,
+    swipeQueue: List<DriveFile> = emptyList(),
+    swipeIndex: Int = -1,
+    onSwipeTo: (Int) -> Unit = {},
     onBack: () -> Unit,
     onTextChange: (String) -> Unit,
     onSaveText: () -> Unit
 ) {
     BackHandler(onBack = onBack)
-    Box(Modifier.fillMaxSize().padding(padding)) {
+    var horizontalDrag by remember(file.id) { mutableFloatStateOf(0f) }
+    val swipeModifier = if (isSwipePreview(file) && swipeQueue.size > 1 && swipeIndex >= 0) {
+        Modifier.pointerInput(file.id, swipeIndex, swipeQueue.size) {
+            detectHorizontalDragGestures(
+                onDragStart = { horizontalDrag = 0f },
+                onHorizontalDrag = { _, amount -> horizontalDrag += amount },
+                onDragEnd = {
+                    val threshold = 56.dp.toPx()
+                    when {
+                        horizontalDrag < -threshold && swipeIndex < swipeQueue.lastIndex -> onSwipeTo(swipeIndex + 1)
+                        horizontalDrag > threshold && swipeIndex > 0 -> onSwipeTo(swipeIndex - 1)
+                    }
+                    horizontalDrag = 0f
+                },
+                onDragCancel = { horizontalDrag = 0f }
+            )
+        }
+    } else Modifier
+    Box(Modifier.fillMaxSize().padding(padding).then(swipeModifier)) {
         when {
             loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
             error != null -> Column(

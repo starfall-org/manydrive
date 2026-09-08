@@ -3,6 +3,7 @@ package com.starfall.gsadrive
 import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -47,6 +48,7 @@ internal fun App(
     upload: () -> Unit,
     createFolder: (String) -> Unit,
     trash: (DriveFile) -> Unit,
+    fileActions: FileActionCallbacks = FileActionCallbacks(),
     accounts: AccountUi = AccountUi(),
     selectAccount: (AccountEntry) -> Unit = {},
     removeAccount: (AccountEntry) -> Unit = {},
@@ -54,6 +56,7 @@ internal fun App(
     openFolder: (DriveFile) -> Unit = {},
     goUp: () -> Unit = {},
     uploadFolder: () -> Unit = {},
+    pickAdditionalPhotos: () -> Unit = {},
     restoreFile: (DriveFile) -> Unit = {},
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     superDark: Boolean = false,
@@ -65,6 +68,7 @@ internal fun App(
     closeViewer: () -> Unit = {},
     updateViewerText: (String) -> Unit = {},
     saveViewerText: () -> Unit = {},
+    swipeViewer: (Int) -> Unit = {},
     playback: Player? = null,
     minimizeViewer: () -> Unit = {},
     expandViewer: () -> Unit = {}
@@ -74,13 +78,21 @@ internal fun App(
     var addingS3 by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<AccountEntry?>(null) }
     var showSettings by remember { mutableStateOf(false) }
-    var showUploadMenu by remember { mutableStateOf(false) }
+    var showFabMenu by remember { mutableStateOf(false) }
+    var showCreateFolderDialog by remember { mutableStateOf(false) }
+    var newFolderName by remember { mutableStateOf("") }
+    var searchQuery by remember { mutableStateOf("") }
+    var folderSearching by remember { mutableStateOf(false) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val drawerScope = rememberCoroutineScope()
     LaunchedEffect(accounts.revision) {
         showAccounts = false
         showTypes = false
         addingS3 = false
+    }
+    LaunchedEffect(selected, model.path.lastOrNull()?.id) {
+        searchQuery = ""
+        folderSearching = false
     }
     val active = accounts.active
     val tabs = listOf(
@@ -89,7 +101,8 @@ internal fun App(
     val openAccounts = { showAccounts = true }
     val viewerExpanded = viewer != null && !viewer.minimized
     val miniViewer = viewer?.takeIf { it.minimized && isMediaPreview(it.file) && it.localPath != null }
-    BackHandler(enabled = !viewerExpanded && drawerState.isOpen) { drawerScope.launch { drawerState.close() } }
+    BackHandler(enabled = !viewerExpanded && showFabMenu) { showFabMenu = false }
+    BackHandler(enabled = !viewerExpanded && drawerState.isOpen && !showFabMenu) { drawerScope.launch { drawerState.close() } }
     BackHandler(enabled = !viewerExpanded && showSettings && !drawerState.isOpen) { showSettings = false }
     BackHandler(enabled = !viewerExpanded && model.path.isNotEmpty() && !showSettings && !showAccounts && !showTypes && !addingS3 && !drawerState.isOpen) { goUp() }
 
@@ -97,71 +110,91 @@ internal fun App(
         drawerState = drawerState,
         gesturesEnabled = !viewerExpanded,
         drawerContent = {
-            ModalDrawerSheet(modifier = Modifier.widthIn(max = 300.dp)) {
-                Spacer(Modifier.height(12.dp))
-                Text("ManyDrive", style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
-                NavigationDrawerItem(
-                    label = { Text("Thùng rác") },
-                    selected = !showSettings && selected == 3,
-                    onClick = {
-                        if (isTabEnabled(active?.type, 3)) {
-                            showSettings = false
-                            drawerScope.launch { drawerState.close() }
-                            select(3)
-                        }
-                    },
-                    icon = { Icon(Icons.Outlined.Delete, null) },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                NavigationDrawerItem(
-                    label = { Text("Cài đặt") },
-                    selected = showSettings,
-                    onClick = {
-                        showSettings = true
+            DriveNavigationDrawer(
+                account = active,
+                trashSelected = !showSettings && selected == 3,
+                settingsSelected = showSettings,
+                onAccounts = {
+                    drawerScope.launch { drawerState.close() }
+                    showAccounts = true
+                },
+                onTrash = {
+                    if (isTabEnabled(active?.type, 3)) {
+                        showSettings = false
                         drawerScope.launch { drawerState.close() }
-                    },
-                    icon = { Icon(Icons.Outlined.Settings, null) },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-            }
+                        select(3)
+                    }
+                },
+                onSettings = {
+                    showSettings = true
+                    drawerScope.launch { drawerState.close() }
+                }
+            )
         }
     ) {
         Scaffold(
             topBar = {
-                CenterAlignedTopAppBar(
-                    title = {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                when {
+                    !viewerExpanded && !showSettings && selected in 0..1 && active != null && model.path.isEmpty() ->
+                        DriveRootTopBar(
+                            query = searchQuery,
+                            onQueryChange = { searchQuery = it },
+                            onMenu = { drawerScope.launch { drawerState.open() } },
+                            onAccounts = openAccounts,
+                            account = active,
+                            shared = selected == 1
+                        )
+                    !viewerExpanded && !showSettings && selected in 0..1 && active != null && model.path.isNotEmpty() ->
+                        FolderBrowserTopBar(
+                            title = model.path.last().name,
+                            query = searchQuery,
+                            searching = folderSearching,
+                            onQueryChange = { searchQuery = it },
+                            onSearchingChange = { folderSearching = it },
+                            onBack = goUp,
+                            onRefresh = reload,
+                            onAccounts = openAccounts
+                        )
+                    !viewerExpanded && showSettings -> TopAppBar(
+                        title = {
+                            Text("Cài đặt", style = MaterialTheme.typography.headlineSmall)
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = { showSettings = false }) {
+                                Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Quay lại")
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                    )
+                    else -> CenterAlignedTopAppBar(
+                        title = {
                             Text(when {
                                 viewerExpanded -> viewer?.file?.name.orEmpty()
-                                showSettings -> "Cài đặt"
                                 selected == 3 -> "Thùng rác"
+                                selected == 2 -> "Ảnh"
                                 else -> "ManyDrive"
                             }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (!viewerExpanded && !showSettings) active?.let { Text(it.type.label, style = MaterialTheme.typography.labelSmall) }
-                        }
-                    },
-                    navigationIcon = {
-                        when {
-                            viewerExpanded -> IconButton(onClick = {
-                                if (viewer?.let { isMediaPreview(it.file) } == true) minimizeViewer() else closeViewer()
-                            }) {
-                                Icon(Icons.AutoMirrored.Outlined.ArrowBack,
-                                    if (viewer?.let { isMediaPreview(it.file) } == true) "Thu nhỏ trình phát" else "Đóng trình xem")
+                        },
+                        navigationIcon = {
+                            when {
+                                viewerExpanded -> IconButton(onClick = {
+                                    if (viewer?.let { isMediaPreview(it.file) } == true) minimizeViewer() else closeViewer()
+                                }) {
+                                    Icon(Icons.AutoMirrored.Outlined.ArrowBack,
+                                        if (viewer?.let { isMediaPreview(it.file) } == true) "Thu nhỏ trình phát" else "Đóng trình xem")
+                                }
+                                else -> IconButton(onClick = { drawerScope.launch { drawerState.open() } }) {
+                                    Icon(Icons.Outlined.Menu, "Mở menu")
+                                }
                             }
-                            model.path.isNotEmpty() && !showSettings -> IconButton(onClick = goUp) {
-                                Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Trở lại thư mục trước")
-                            }
-                            else -> IconButton(onClick = { drawerScope.launch { drawerState.open() } }) {
-                                Icon(Icons.Outlined.Menu, "Mở menu")
-                            }
-                        }
-                    },
-                    actions = {
-                        if (!viewerExpanded && !showSettings) IconButton(onClick = openAccounts) { Icon(Icons.Outlined.AccountCircle, "Tài khoản") }
-                    },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-                )
+                        },
+                        actions = {
+                            if (!viewerExpanded && !showSettings && active != null)
+                                AccountAvatar(active, openAccounts)
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                    )
+                }
             },
             bottomBar = {
                 if (!viewerExpanded) Column {
@@ -182,16 +215,71 @@ internal fun App(
                 }
             },
             floatingActionButton = {
-                if (!viewerExpanded) FloatingActionButton(onClick = { showUploadMenu = true }) {
-                    Icon(Icons.Outlined.Add, "Tải lên")
+                if (!viewerExpanded && !showSettings) {
+                    Column(
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        if (showFabMenu) {
+                            if (selected == 2 && active?.type == AccountType.GOOGLE) {
+                                ExtendedFloatingActionButton(
+                                    onClick = {
+                                        showFabMenu = false
+                                        pickAdditionalPhotos()
+                                    },
+                                    icon = { Icon(Icons.Outlined.AddPhotoAlternate, null) },
+                                    text = { Text("Chọn ảnh") },
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                            ExtendedFloatingActionButton(
+                                onClick = {
+                                    showFabMenu = false
+                                    upload()
+                                },
+                                icon = { Icon(Icons.Outlined.UploadFile, null) },
+                                text = { Text("Tải lên") },
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            ExtendedFloatingActionButton(
+                                onClick = {
+                                    showFabMenu = false
+                                    newFolderName = ""
+                                    showCreateFolderDialog = true
+                                },
+                                icon = { Icon(Icons.Outlined.Folder, null) },
+                                text = { Text("Thư mục") },
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                        FloatingActionButton(
+                            onClick = { showFabMenu = !showFabMenu },
+                            containerColor = if (showFabMenu) MaterialTheme.colorScheme.inverseSurface
+                                else MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = if (showFabMenu) MaterialTheme.colorScheme.inverseOnSurface
+                                else MaterialTheme.colorScheme.onPrimaryContainer
+                        ) {
+                            Icon(
+                                if (showFabMenu) Icons.Outlined.Close else Icons.Outlined.Add,
+                                if (showFabMenu) "Đóng menu tạo mới" else "Tạo mới"
+                            )
+                        }
+                    }
                 }
             }
         ) { padding ->
-            when {
+            Box(Modifier.fillMaxSize()) {
+                when {
                 viewerExpanded && viewer != null && playback != null -> FileViewerPage(
                     padding = padding, file = viewer.file, localPath = viewer.localPath, text = viewer.text,
                     loading = viewer.loading, error = viewer.error, saving = viewer.saving,
                     player = playback,
+                    swipeQueue = viewer.swipeQueue,
+                    swipeIndex = viewer.swipeIndex,
+                    onSwipeTo = swipeViewer,
                     onBack = { if (isMediaPreview(viewer.file)) minimizeViewer() else closeViewer() },
                     onTextChange = updateViewerText, onSaveText = saveViewerText
                 )
@@ -205,79 +293,74 @@ internal fun App(
                     val contentPadding = PaddingValues(0.dp)
                     when {
                         selected == 3 -> TrashPage(model, contentPadding, restoreFile)
-                        active.type != AccountType.GOOGLE -> StoragePage(model, contentPadding, active,
-                            { showTypes = true }, openAccounts, signOut, shared = selected == 1,
-                            openFolder = openFolder, goUp = goUp, openFile = openFile)
                         selected == 2 -> PhotosPage(model, contentPadding, openAccounts, authorize)
-                        else -> DrivePage(model, contentPadding, openAccounts, authorize, signOut,
-                            upload, createFolder, trash, openFolder, goUp, openFile)
+                        else -> FileBrowserPage(
+                            model = model,
+                            padding = contentPadding,
+                            account = active,
+                            shared = selected == 1,
+                            query = searchQuery,
+                            authorize = authorize,
+                            openFolder = openFolder,
+                            openFile = openFile,
+                            actions = fileActions.copy(
+                                trash = if (active.type != AccountType.S3 && selected == 0) fileActions.trash else null
+                            )
+                        )
                     }
+                }
+                }
+                if (showFabMenu) {
+                    Box(
+                        Modifier.fillMaxSize()
+                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.28f))
+                            .clickable { showFabMenu = false }
+                    )
                 }
             }
         }
     }
 
-    if (showUploadMenu) AlertDialog(
-        onDismissRequest = { showUploadMenu = false },
-        title = { Text("Tải lên") },
-        text = { Text("Chọn tệp (có thể chọn nhiều tệp cùng lúc) hoặc chọn cả một thư mục.") },
+    if (showCreateFolderDialog) AlertDialog(
+        onDismissRequest = { showCreateFolderDialog = false },
+        title = { Text("Thư mục mới") },
+        text = {
+            OutlinedTextField(
+                value = newFolderName,
+                onValueChange = { newFolderName = it },
+                label = { Text("Tên thư mục") },
+                singleLine = true
+            )
+        },
         confirmButton = {
-            TextButton(onClick = { showUploadMenu = false; upload() }) { Text("Chọn tệp") }
+            TextButton(
+                enabled = newFolderName.isNotBlank(),
+                onClick = {
+                    val name = newFolderName.trim()
+                    showCreateFolderDialog = false
+                    newFolderName = ""
+                    createFolder(name)
+                }
+            ) { Text("Tạo") }
         },
         dismissButton = {
-            Row {
-                TextButton(onClick = { showUploadMenu = false; uploadFolder() }) { Text("Chọn thư mục") }
-                TextButton(onClick = { showUploadMenu = false }) { Text("Hủy") }
-            }
+            TextButton(onClick = { showCreateFolderDialog = false }) { Text("Hủy") }
         }
     )
 
-    if (showAccounts) AlertDialog(
-        onDismissRequest = { if (!accounts.busy) showAccounts = false },
-        title = { Text("Tài khoản") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                accounts.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                if (accounts.busy) Loading()
-                if (accounts.entries.isEmpty()) Text("Chưa có tài khoản. Thêm Google, S3 hoặc Service Account để bắt đầu.")
-                accounts.entries.forEach { entry ->
-                    Surface(
-                        color = if (entry.key == active?.key) MaterialTheme.colorScheme.secondaryContainer
-                            else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Row(Modifier.weight(1f).clickable(enabled = !accounts.busy) {
-                                showAccounts = false
-                                selectAccount(entry)
-                            }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(if (entry.type == AccountType.S3) Icons.Outlined.Cloud else Icons.Outlined.AccountCircle,
-                                    null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
-                                Spacer(Modifier.width(12.dp))
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(entry.title, style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                    Text(entry.subtitle, style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        if (entry.key == active?.key) Icon(Icons.Outlined.CheckCircle, null, modifier = Modifier.size(14.dp))
-                                        Text(entry.type.label + if (entry.key == active?.key) " • Đang chọn" else "",
-                                            style = MaterialTheme.typography.labelSmall)
-                                    }
-                                }
-                            }
-                            IconButton(onClick = { removing = entry }, enabled = !accounts.busy) {
-                                Icon(Icons.AutoMirrored.Outlined.Logout, "Đăng xuất khỏi ${entry.title}")
-                            }
-                        }
-                    }
-                }
-            }
+    if (showAccounts) AccountSwitcherDialog(
+        accounts = accounts,
+        active = active,
+        onDismiss = { showAccounts = false },
+        onSelect = { entry ->
+            showAccounts = false
+            selectAccount(entry)
         },
-        confirmButton = { TextButton(onClick = { showTypes = true }, enabled = !accounts.busy) { Text("Thêm tài khoản") } },
-        dismissButton = { TextButton(onClick = { showAccounts = false }, enabled = !accounts.busy) { Text("Đóng") } }
+        onRemove = { entry -> removing = entry },
+        onAdd = {
+            showAccounts = false
+            showTypes = true
+        }
     )
     if (showTypes) AlertDialog(
         onDismissRequest = { showTypes = false },
@@ -328,11 +411,6 @@ private fun StoragePage(
             }
         }
         if (shared) item { Text("Chia sẻ với tôi", style = MaterialTheme.typography.titleMedium) }
-        if (model.fromCache) item {
-            Text("Đang hiển thị danh sách đã lưu trong cache.", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        if (model.path.isNotEmpty()) item { FolderPath(model.path) }
         model.message?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         if (account != null && !model.loading && model.message == null && model.files.isEmpty()) item { Text("Chưa có tệp để hiển thị.") }
         items(model.files, key = { it.id }) { FileRow(it, onOpen = openFolder, onPreview = openFile, enabled = !model.loading) }
@@ -402,13 +480,8 @@ private fun DrivePage(
                 }
             }
         }
-        if (model.fromCache) item {
-            Text("Đang hiển thị danh sách đã lưu trong cache.", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
         model.message?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         if (!model.loading && model.token != null && model.files.isEmpty()) item { Text("Không có tệp trong vị trí này.") }
-        if (model.path.isNotEmpty()) item { FolderPath(model.path) }
         items(model.files, key = { it.id }) { FileRow(it, trash, openFolder, !model.loading, onPreview = openFile) }
     }
 }
@@ -424,11 +497,6 @@ private fun TrashPage(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        if (model.fromCache) item {
-            Text("Đang hiển thị danh sách đã lưu trong cache.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
         model.message?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         if (!model.loading && model.message == null && model.files.isEmpty()) item { Text("Thùng rác đang trống.") }
         items(model.files, key = { it.id }) { file ->
@@ -513,15 +581,6 @@ private fun S3AccountDialog(
             ) { Text("Kết nối và lưu") }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !loading) { Text("Hủy") } }
-    )
-}
-
-@Composable
-private fun FolderPath(path: List<DriveFile>) {
-    if (path.isNotEmpty()) Text(
-        path.joinToString(" / ") { it.name },
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
     )
 }
 

@@ -44,20 +44,21 @@ internal class ViewerCoordinator(
 
     fun syncToMediaItem(mediaItem: MediaItem) {
         val source = PlaybackSourceRegistry.get(mediaItem.mediaId) ?: return
-        val ordered = PlaybackSourceRegistry.all()
-        val index = ordered.indexOfFirst { it.mediaId == mediaItem.mediaId }
         val previous = state
+        val queue = previous?.swipeQueue?.takeIf { items -> items.any { it.id == source.file.id } }
+            ?: currentFiles().filter(::isSwipePreview)
+        val index = queue.indexOfFirst { it.id == source.file.id }
         state = ViewerState(
             file = source.file,
             localPath = source.cacheFile.path,
             loading = false,
             minimized = previous?.minimized ?: true,
-            mediaQueue = ordered.map { it.file },
-            mediaIndex = index
+            swipeQueue = queue,
+            swipeIndex = index
         )
     }
 
-    fun open(file: DriveFile, minimized: Boolean = false, mediaQueue: List<DriveFile>? = null) {
+    fun open(file: DriveFile, minimized: Boolean = false, swipeQueue: List<DriveFile>? = null) {
         if (file.isFolder) return
         if (!isPreviewable(file)) {
             Toast.makeText(context, "Chưa hỗ trợ xem loại tệp ${file.mimeType.ifBlank { "này" }}", Toast.LENGTH_SHORT).show()
@@ -66,16 +67,26 @@ internal class ViewerCoordinator(
         val account = activeAccount() ?: return
         if (isMediaPreview(file)) requestNotificationPermission()
         val request = ++generation
+        val browsingQueue = if (isSwipePreview(file)) {
+            (swipeQueue ?: currentFiles().filter(::isSwipePreview)).ifEmpty { listOf(file) }
+        } else emptyList()
+        val browsingIndex = browsingQueue.indexOfFirst { it.id == file.id }
 
         if (isMediaPreview(file)) {
-            openMedia(request, account, file, minimized, mediaQueue)
+            openMedia(request, account, file, minimized, browsingQueue)
             return
         }
 
         player()?.stop()
         player()?.clearMediaItems()
         PlaybackSourceRegistry.clear()
-        state = ViewerState(file = file, loading = true)
+        state = ViewerState(
+            file = file,
+            loading = true,
+            minimized = minimized,
+            swipeQueue = browsingQueue,
+            swipeIndex = browsingIndex
+        )
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -109,10 +120,11 @@ internal class ViewerCoordinator(
         account: AccountEntry,
         file: DriveFile,
         minimized: Boolean,
-        mediaQueue: List<DriveFile>?
+        browsingQueue: List<DriveFile>
     ) {
-        val queue = mediaQueue ?: currentFiles().filter(::isMediaPreview)
-        val queueIndex = queue.indexOfFirst { it.id == file.id }.coerceAtLeast(0)
+        val mediaQueue = browsingQueue.filter(::isMediaPreview)
+        val mediaIndex = mediaQueue.indexOfFirst { it.id == file.id }.coerceAtLeast(0)
+        val browsingIndex = browsingQueue.indexOfFirst { it.id == file.id }.coerceAtLeast(0)
         val config = if (account.type == AccountType.S3) s3Config(account) else null
         val token = if (account.type == AccountType.S3) null else accessToken()
         if (account.type != AccountType.S3 && token == null) {
@@ -124,7 +136,7 @@ internal class ViewerCoordinator(
             return
         }
 
-        val sources = queue.mapIndexed { index, item ->
+        val sources = mediaQueue.mapIndexed { index, item ->
             PlaybackSource(
                 mediaId = "${account.key}:$index:${item.id}",
                 file = item,
@@ -135,14 +147,14 @@ internal class ViewerCoordinator(
             )
         }
         PlaybackSourceRegistry.replace(sources)
-        val selectedSource = sources.getOrNull(queueIndex) ?: return
+        val selectedSource = sources.getOrNull(mediaIndex) ?: return
         state = ViewerState(
             file = file,
             localPath = selectedSource.cacheFile.path,
             loading = false,
             minimized = minimized,
-            mediaQueue = queue,
-            mediaIndex = queueIndex
+            swipeQueue = browsingQueue,
+            swipeIndex = browsingIndex
         )
 
         scope.launch {
@@ -159,7 +171,7 @@ internal class ViewerCoordinator(
                 controller to items
             }.onSuccess { (controller, items) ->
                 if (request == generation && state?.file?.id == file.id) {
-                    controller.setMediaItems(items, queueIndex, 0L)
+                    controller.setMediaItems(items, mediaIndex, 0L)
                     controller.prepare()
                     controller.play()
                 }
@@ -169,6 +181,15 @@ internal class ViewerCoordinator(
                 }
             }
         }
+    }
+
+    fun swipeTo(index: Int) {
+        val current = state ?: return
+        if (current.saving || current.loading) return
+        val queue = current.swipeQueue
+        val target = queue.getOrNull(index) ?: return
+        if (target.id == current.file.id) return
+        open(target, minimized = current.minimized, swipeQueue = queue)
     }
 
     fun close() {

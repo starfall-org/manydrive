@@ -4,7 +4,14 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-data class PhotoItem(val id: String, val filename: String, val mimeType: String, val baseUrl: String?)
+data class PhotoItem(
+    val id: String,
+    val filename: String,
+    val mimeType: String,
+    val baseUrl: String?,
+    val localPath: String? = null,
+    val createTime: String? = null
+)
 
 /** Google Photos Library API now exposes only media created by this application. */
 object PhotosApi {
@@ -19,7 +26,15 @@ object PhotosApi {
         if (connection.responseCode !in 200..299) error("Google Photos API (${connection.responseCode}): $body")
         val items = JSONObject(body).optJSONArray("mediaItems") ?: return emptyList()
         return List(items.length()) { index ->
-            items.getJSONObject(index).let { PhotoItem(it.getString("id"), it.optString("filename", "Không tên"), it.optString("mimeType"), it.optString("baseUrl").ifBlank { null }) }
+            items.getJSONObject(index).let {
+                PhotoItem(
+                    id = it.getString("id"),
+                    filename = it.optString("filename", "Không tên"),
+                    mimeType = it.optString("mimeType"),
+                    baseUrl = it.optString("baseUrl").ifBlank { null },
+                    createTime = it.optJSONObject("mediaMetadata")?.optString("creationTime")?.ifBlank { null }
+                )
+            }
         }
     }
 }

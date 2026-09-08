@@ -16,7 +16,7 @@ class FileListCache(private val directory: File) {
         val file = file(account, location)
         if (!file.isFile || file.length() > 20 * 1024 * 1024) return null
         val json = JSONObject(file.readText())
-        if (json.getInt("version") != 1) return null
+        if (json.getInt("version") != 2) return null
         val items = json.getJSONArray("files")
         List(items.length()) { i ->
             val item = items.getJSONObject(i)
@@ -24,7 +24,7 @@ class FileListCache(private val directory: File) {
                 item.optString("modifiedTime").ifBlank { null }, item.optString("size").toLongOrNull(),
                 item.optString("thumbnailUrl").ifBlank { null }, item.optString("webViewUrl").ifBlank { null },
                 item.getJSONArray("parents").let { parents -> List(parents.length()) { parents.getString(it) } },
-                item.optBoolean("trashed"))
+                item.optBoolean("trashed"), item.optString("sharedWithMeTime").ifBlank { null })
         }
     }.getOrNull()
 
@@ -36,9 +36,10 @@ class FileListCache(private val directory: File) {
             files.forEach { item -> values.put(JSONObject().put("id", item.id).put("name", item.name)
                 .put("mimeType", item.mimeType).put("modifiedTime", item.modifiedTime)
                 .put("size", item.size).put("thumbnailUrl", item.thumbnailUrl).put("webViewUrl", item.webViewUrl)
-                .put("parents", JSONArray(item.parents)).put("trashed", item.trashed)) }
+                .put("parents", JSONArray(item.parents)).put("trashed", item.trashed)
+                .put("sharedWithMeTime", item.sharedWithMeTime)) }
             val temporary = File(target.path + ".tmp")
-            temporary.writeText(JSONObject().put("version", 1).put("files", values).toString())
+            temporary.writeText(JSONObject().put("version", 2).put("files", values).toString())
             check(temporary.renameTo(target))
             var bytes = 0L
             directory.walkTopDown().filter { it.isFile }.sortedByDescending { it.lastModified() }.forEach {
