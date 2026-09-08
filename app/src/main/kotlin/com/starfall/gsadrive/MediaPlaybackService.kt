@@ -1,5 +1,7 @@
 package com.starfall.gsadrive
 
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
@@ -113,6 +115,7 @@ object PlaybackSourceRegistry {
 }
 
 /** DataSource that lazily downloads a ManyDrive media item, then exposes it as a seekable file. */
+@OptIn(UnstableApi::class)
 private class ManyDriveMediaDataSource : BaseDataSource(false) {
     private var opened = false
     private var currentUri: Uri? = null
@@ -180,6 +183,7 @@ object PlaybackSettings {
     }
 }
 
+@OptIn(UnstableApi::class)
 class MediaPlaybackService : MediaSessionService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var mediaSession: MediaSession? = null

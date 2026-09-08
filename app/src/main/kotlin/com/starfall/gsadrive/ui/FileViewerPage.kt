@@ -3,6 +3,8 @@ package com.starfall.gsadrive.ui
 import android.graphics.BitmapFactory
 import android.view.LayoutInflater
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.rememberUpdatedState
@@ -399,7 +401,8 @@ internal fun MediaViewer(
                 color = Color.White)
         }
         if (compact) {
-            Row(Modifier.fillMaxSize().padding(start = videoWidth, end = 4.dp),
+            Row(Modifier.fillMaxSize().graphicsLayer { alpha = ((compactFraction - 0.85f) / 0.15f).coerceIn(0f, 1f) }
+                .padding(start = videoWidth, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Text(title, Modifier.weight(1f).padding(horizontal = 8.dp), color = Color.White,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -409,8 +412,9 @@ internal fun MediaViewer(
                 }
             }
         }
-        if (!compact) Column(
+        if (compactFraction < 0.5f) Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .graphicsLayer { alpha = (1f - compactFraction * 2f).coerceIn(0f, 1f) }
                 .background(Color.Black.copy(alpha = 0.7f)).padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -459,7 +463,7 @@ fun MediaMiniPlayer(
 ) {
     var verticalDrag by remember { mutableFloatStateOf(0f) }
     val expand by rememberUpdatedState(onExpand)
-    Box(modifier.pointerInput(player) {
+    Box(modifier.fillMaxWidth().height(72.dp).pointerInput(player) {
         detectVerticalDragGestures(
             onDragStart = { verticalDrag = 0f },
             onVerticalDrag = { change, amount -> change.consume(); verticalDrag += amount },

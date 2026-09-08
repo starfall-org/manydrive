@@ -32,6 +32,8 @@ import com.starfall.gsadrive.ui.ExpandableMediaPlayer
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import com.starfall.gsadrive.ui.NavigationSwipe
+import com.starfall.gsadrive.ui.navigationSwipes
 import com.starfall.gsadrive.ui.SettingsPage
 import com.starfall.gsadrive.ui.theme.ManyDriveTheme
 import com.starfall.gsadrive.ui.theme.ThemeMode
@@ -167,7 +169,8 @@ internal fun App(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = !viewerExpanded,
+        // Native dragging remains available to close an open drawer. Opening is edge-only.
+        gesturesEnabled = !viewerExpanded && drawerState.isOpen,
         drawerContent = {
             DriveNavigationDrawer(
                 account = active,
@@ -192,201 +195,216 @@ internal fun App(
         }
     ) {
         Box(Modifier.fillMaxSize()) {
-        Scaffold(
-            containerColor = if (viewerBlack) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.background,
-            topBar = {
-                when {
-                    !viewerExpanded && !showSettings && selected in 0..1 && active != null && model.path.isEmpty() ->
-                        DriveRootTopBar(
-                            query = searchQuery,
-                            onQueryChange = { searchQuery = it },
-                            onMenu = { drawerScope.launch { drawerState.open() } },
-                            onAccounts = openAccounts,
-                            account = active
-                        )
-                    !viewerExpanded && !showSettings && selected in 0..1 && active != null && model.path.isNotEmpty() ->
-                        FolderBrowserTopBar(
-                            title = model.path.last().name,
-                            query = searchQuery,
-                            searching = folderSearching,
-                            onQueryChange = { searchQuery = it },
-                            onSearchingChange = { folderSearching = it },
-                            onBack = goUp,
-                            onRefresh = reload,
-                            onAccounts = openAccounts
-                        )
-                    !viewerExpanded && showSettings -> TopAppBar(
-                        title = {
-                            Text("Cài đặt", style = MaterialTheme.typography.headlineSmall)
-                        },
-                        navigationIcon = {
-                            IconButton(onClick = { showSettings = false }) {
-                                Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Quay lại")
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-                    )
-                    else -> CenterAlignedTopAppBar(
-                        title = {
-                            Text(when {
-                                viewerExpanded -> viewer?.file?.name.orEmpty()
-                                selected == 3 -> "Thùng rác"
-                                else -> "ManyDrive"
-                            }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        },
-                        navigationIcon = {
-                            when {
-                                viewerExpanded -> IconButton(onClick = {
-                                    if (viewer?.let { isMediaPreview(it.file) } == true) minimizeViewer() else closeViewer()
-                                }) {
-                                    Icon(Icons.AutoMirrored.Outlined.ArrowBack,
-                                        if (viewer?.let { isMediaPreview(it.file) } == true) "Thu nhỏ trình phát" else "Đóng trình xem")
-                                }
-                                else -> IconButton(onClick = { drawerScope.launch { drawerState.open() } }) {
-                                    Icon(Icons.Outlined.Menu, "Mở menu")
-                                }
-                            }
-                        },
-                        actions = {
-                            if (!viewerExpanded && !showSettings && active != null)
-                                AccountAvatar(active, openAccounts)
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = if (viewerBlack) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surface,
-                            titleContentColor = if (viewerBlack) androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurface,
-                            navigationIconContentColor = if (viewerBlack) androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurface,
-                            actionIconContentColor = if (viewerBlack) androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurface
-                        )
-                    )
-                }
-            },
-            bottomBar = {
-                if (!viewerExpanded || mediaViewer != null) Column {
-                    if (mediaViewer != null && playback != null) {
-                        // Reserve and measure the compact slot; the video itself remains in the overlay.
-                        Spacer(Modifier.fillMaxWidth().height(72.dp).onGloballyPositioned {
-                            miniBounds = it.boundsInRoot()
-                        })
-                    }
-                    if (!showSettings) NavigationBar {
-                        tabs.forEachIndexed { index, item ->
-                            NavigationBarItem(selected = index == selected, onClick = { showSettings = false; select(index) },
-                                enabled = isTabEnabled(active?.type, index),
-                                icon = { Icon(item.icon, item.label) }, label = { Text(item.label) })
+            Scaffold(
+                modifier = Modifier.navigationSwipes(
+                    enabled = !viewerExpanded && drawerState.isClosed && !drawerState.isAnimationRunning &&
+                        !showFabMenu && !showAccounts && !showTypes && !addingS3 && !showCreateFolderDialog
+                ) { gesture ->
+                    when (gesture) {
+                        NavigationSwipe.OPEN_DRAWER -> drawerScope.launch { drawerState.open() }
+                        NavigationSwipe.PREVIOUS_TAB, NavigationSwipe.NEXT_TAB -> {
+                            val target = selected + if (gesture == NavigationSwipe.NEXT_TAB) 1 else -1
+                            if (!showSettings && selected in tabs.indices && target in tabs.indices &&
+                                isTabEnabled(active?.type, target)) select(target)
                         }
                     }
-                }
-            },
-            floatingActionButton = {
-                if (!viewerExpanded && !showSettings) {
-                    Column(
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        if (showFabMenu) {
-                            ExtendedFloatingActionButton(
-                                onClick = {
-                                    showFabMenu = false
-                                    newFolderName = ""
-                                    showCreateFolderDialog = true
-                                },
-                                icon = { Icon(Icons.Outlined.Folder, null) },
-                                text = { Text("Thư mục") },
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                        }
-                        FloatingActionButton(
-                            onClick = { showFabMenu = !showFabMenu },
-                            containerColor = if (showFabMenu) MaterialTheme.colorScheme.inverseSurface
-                                else MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = if (showFabMenu) MaterialTheme.colorScheme.inverseOnSurface
-                                else MaterialTheme.colorScheme.onPrimaryContainer
-                        ) {
-                            Icon(
-                                if (showFabMenu) Icons.Outlined.Close else Icons.Outlined.Add,
-                                if (showFabMenu) "Đóng menu tạo mới" else "Tạo mới"
-                            )
-                        }
-                    }
-                }
-            }
-        ) { padding ->
-            SideEffect { playerTopPadding = padding.calculateTopPadding() }
-            Box(Modifier.fillMaxSize()) {
-                when {
-                    viewerExpanded && mediaViewer == null && viewer != null && playback != null -> FileViewerPage(
-                        padding = padding,
-                        file = viewer.file,
-                        localPath = viewer.localPath,
-                        text = viewer.text,
-                        loading = viewer.loading,
-                        error = viewer.error,
-                        saving = viewer.saving,
-                        player = playback,
-                        swipeQueue = viewer.swipeQueue,
-                        swipeIndex = viewer.swipeIndex,
-                        previewPaths = viewer.previewPaths,
-                        onSwipeTo = swipeViewer,
-                        onBack = { if (isMediaPreview(viewer.file)) minimizeViewer() else closeViewer() },
-                        onTextChange = updateViewerText,
-                        onSaveText = saveViewerText
-                    )
-                    showSettings -> SettingsPage(padding, themeMode, superDark, setThemeMode, setSuperDark, clearCache)
-                    active == null -> StoragePage(model, padding, null, { showTypes = true }, openAccounts, signOut, openFile = openFile)
-                    else -> PullToRefreshBox(
-                        isRefreshing = model.loading,
-                        onRefresh = { if (!model.loading && !accounts.busy) reload() },
-                        modifier = Modifier.fillMaxSize().padding(padding)
-                    ) {
-                        val contentPadding = PaddingValues(0.dp)
-                        when {
-                            selected == 3 -> TrashPage(model, contentPadding, restoreFile)
-                            else -> FileBrowserPage(
-                                model = model,
-                                padding = contentPadding,
-                                account = active,
-                                shared = selected == 1,
+                },
+                containerColor = if (viewerBlack) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.background,
+                topBar = {
+                    when {
+                        !viewerExpanded && !showSettings && selected in 0..1 && active != null && model.path.isEmpty() ->
+                            DriveRootTopBar(
                                 query = searchQuery,
-                                searchResults = globalSearchResults,
-                                searchLoading = globalSearchLoading,
-                                searchError = globalSearchError,
-                                authorize = authorize,
-                                openFolder = if (globalSearchResults != null && searchQuery.isNotBlank()) openSearchFolder else openFolder,
-                                openFile = openFile,
-                                actions = fileActions.copy(
-                                    trash = if (active.type != AccountType.S3 && selected == 0) fileActions.trash else null
-                                )
+                                onQueryChange = { searchQuery = it },
+                                onMenu = { drawerScope.launch { drawerState.open() } },
+                                onAccounts = openAccounts,
+                                account = active
                             )
+                        !viewerExpanded && !showSettings && selected in 0..1 && active != null && model.path.isNotEmpty() ->
+                            FolderBrowserTopBar(
+                                title = model.path.last().name,
+                                query = searchQuery,
+                                searching = folderSearching,
+                                onQueryChange = { searchQuery = it },
+                                onSearchingChange = { folderSearching = it },
+                                onBack = goUp,
+                                onRefresh = reload,
+                                onAccounts = openAccounts
+                            )
+                        !viewerExpanded && showSettings -> TopAppBar(
+                            title = {
+                                Text("Cài đặt", style = MaterialTheme.typography.headlineSmall)
+                            },
+                            navigationIcon = {
+                                IconButton(onClick = { showSettings = false }) {
+                                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Quay lại")
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                        )
+                        else -> CenterAlignedTopAppBar(
+                            title = {
+                                Text(when {
+                                    viewerExpanded -> viewer?.file?.name.orEmpty()
+                                    selected == 3 -> "Thùng rác"
+                                    else -> "ManyDrive"
+                                }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            },
+                            navigationIcon = {
+                                when {
+                                    viewerExpanded -> IconButton(onClick = {
+                                        if (viewer?.let { isMediaPreview(it.file) } == true) minimizeViewer() else closeViewer()
+                                    }) {
+                                        Icon(Icons.AutoMirrored.Outlined.ArrowBack,
+                                            if (viewer?.let { isMediaPreview(it.file) } == true) "Thu nhỏ trình phát" else "Đóng trình xem")
+                                    }
+                                    else -> IconButton(onClick = { drawerScope.launch { drawerState.open() } }) {
+                                        Icon(Icons.Outlined.Menu, "Mở menu")
+                                    }
+                                }
+                            },
+                            actions = {
+                                if (!viewerExpanded && !showSettings && active != null)
+                                    AccountAvatar(active, openAccounts)
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = if (viewerBlack) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surface,
+                                titleContentColor = if (viewerBlack) androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurface,
+                                navigationIconContentColor = if (viewerBlack) androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurface,
+                                actionIconContentColor = if (viewerBlack) androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurface
+                            )
+                        )
+                    }
+                },
+                bottomBar = {
+                    if (!viewerExpanded || mediaViewer != null) Column(
+                        modifier = if (showSettings) Modifier.navigationBarsPadding() else Modifier
+                    ) {
+                        if (mediaViewer != null && playback != null) {
+                            // Reserve and measure the compact slot; the video itself remains in the overlay.
+                            Spacer(Modifier.fillMaxWidth().height(72.dp).onGloballyPositioned {
+                                miniBounds = it.boundsInRoot()
+                            })
+                        }
+                        if (!showSettings) NavigationBar {
+                            tabs.forEachIndexed { index, item ->
+                                NavigationBarItem(selected = index == selected, onClick = { showSettings = false; select(index) },
+                                    enabled = isTabEnabled(active?.type, index),
+                                    icon = { Icon(item.icon, item.label) }, label = { Text(item.label) })
+                            }
+                        }
+                    }
+                },
+                floatingActionButton = {
+                    if (!viewerExpanded && !showSettings) {
+                        Column(
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            if (showFabMenu) {
+                                ExtendedFloatingActionButton(
+                                    onClick = {
+                                        showFabMenu = false
+                                        newFolderName = ""
+                                        showCreateFolderDialog = true
+                                    },
+                                    icon = { Icon(Icons.Outlined.Folder, null) },
+                                    text = { Text("Thư mục") },
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                            FloatingActionButton(
+                                onClick = { showFabMenu = !showFabMenu },
+                                containerColor = if (showFabMenu) MaterialTheme.colorScheme.inverseSurface
+                                    else MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = if (showFabMenu) MaterialTheme.colorScheme.inverseOnSurface
+                                    else MaterialTheme.colorScheme.onPrimaryContainer
+                            ) {
+                                Icon(
+                                    if (showFabMenu) Icons.Outlined.Close else Icons.Outlined.Add,
+                                    if (showFabMenu) "Đóng menu tạo mới" else "Tạo mới"
+                                )
+                            }
                         }
                     }
                 }
-                if (showFabMenu) {
-                    Box(
-                        Modifier.fillMaxSize()
-                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.28f))
-                            .clickable { showFabMenu = false }
-                    )
+            ) { padding ->
+                SideEffect { playerTopPadding = padding.calculateTopPadding() }
+                Box(Modifier.fillMaxSize()) {
+                    when {
+                        viewerExpanded && mediaViewer == null && viewer != null && playback != null -> FileViewerPage(
+                            padding = padding,
+                            file = viewer.file,
+                            localPath = viewer.localPath,
+                            text = viewer.text,
+                            loading = viewer.loading,
+                            error = viewer.error,
+                            saving = viewer.saving,
+                            player = playback,
+                            swipeQueue = viewer.swipeQueue,
+                            swipeIndex = viewer.swipeIndex,
+                            previewPaths = viewer.previewPaths,
+                            onSwipeTo = swipeViewer,
+                            onBack = { if (isMediaPreview(viewer.file)) minimizeViewer() else closeViewer() },
+                            onTextChange = updateViewerText,
+                            onSaveText = saveViewerText
+                        )
+                        showSettings -> SettingsPage(padding, themeMode, superDark, setThemeMode, setSuperDark, clearCache)
+                        active == null -> StoragePage(model, padding, null, { showTypes = true }, openAccounts, signOut, openFile = openFile)
+                        else -> PullToRefreshBox(
+                            isRefreshing = model.loading,
+                            onRefresh = { if (!model.loading && !accounts.busy) reload() },
+                            modifier = Modifier.fillMaxSize().padding(padding)
+                        ) {
+                            val contentPadding = PaddingValues(0.dp)
+                            when {
+                                selected == 3 -> TrashPage(model, contentPadding, restoreFile)
+                                else -> FileBrowserPage(
+                                    model = model,
+                                    padding = contentPadding,
+                                    account = active,
+                                    shared = selected == 1,
+                                    query = searchQuery,
+                                    searchResults = globalSearchResults,
+                                    searchLoading = globalSearchLoading,
+                                    searchError = globalSearchError,
+                                    authorize = authorize,
+                                    openFolder = if (globalSearchResults != null && searchQuery.isNotBlank()) openSearchFolder else openFolder,
+                                    openFile = openFile,
+                                    actions = fileActions.copy(
+                                        trash = if (active.type != AccountType.S3 && selected == 0) fileActions.trash else null
+                                    )
+                                )
+                            }
+                        }
+                    }
+                    if (showFabMenu) {
+                        Box(
+                            Modifier.fillMaxSize()
+                                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.28f))
+                                .clickable { showFabMenu = false }
+                        )
+                    }
                 }
             }
-        }
-        if (mediaViewer != null && playback != null) {
-            ExpandableMediaPlayer(
-                player = playback,
-                title = mediaViewer.file.name,
-                audioOnly = mediaViewer.file.mimeType.startsWith("audio/"),
-                minimized = mediaViewer.minimized,
-                topPadding = playerTopPadding,
-                miniBounds = miniBounds,
-                onMinimize = minimizeViewer,
-                onExpand = expandViewer,
-                onClose = closeViewer,
-                onSwipe = { next ->
-                    val index = mediaViewer.swipeIndex + if (next) 1 else -1
-                    if (index in mediaViewer.swipeQueue.indices) swipeViewer(index)
-                }
-            )
-        }
+            if (mediaViewer != null && playback != null) {
+                ExpandableMediaPlayer(
+                    player = playback,
+                    title = mediaViewer.file.name,
+                    audioOnly = mediaViewer.file.mimeType.startsWith("audio/"),
+                    minimized = mediaViewer.minimized,
+                    topPadding = playerTopPadding,
+                    miniBounds = miniBounds,
+                    onMinimize = minimizeViewer,
+                    onExpand = expandViewer,
+                    onClose = closeViewer,
+                    onSwipe = { next ->
+                        val index = mediaViewer.swipeIndex + if (next) 1 else -1
+                        if (index in mediaViewer.swipeQueue.indices) swipeViewer(index)
+                    }
+                )
+            }
         }
     }
 
