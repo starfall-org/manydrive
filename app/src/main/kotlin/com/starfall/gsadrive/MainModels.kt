@@ -11,7 +11,6 @@ internal data class Model(
     val path: List<DriveFile> = emptyList(),
     val fromCache: Boolean = false, val uploading: Boolean = false
 )
-
 internal data class ViewerState(
     val file: DriveFile,
     val localPath: String? = null,
@@ -21,7 +20,8 @@ internal data class ViewerState(
     val error: String? = null,
     val minimized: Boolean = false,
     val swipeQueue: List<DriveFile> = emptyList(),
-    val swipeIndex: Int = -1
+    val swipeIndex: Int = -1,
+    val previewPaths: Map<String, String> = emptyMap()
 )
 
 internal const val MAX_TEXT_PREVIEW_BYTES = 4L * 1024 * 1024

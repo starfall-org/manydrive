@@ -69,6 +69,28 @@ object DriveApi {
         return files
     }
 
+    /** Global Drive search. No parent constraint: results can come from any folder depth or shared content. */
+    fun searchFiles(accessToken: String, text: String): List<DriveFile> {
+        val term = text.trim()
+        if (term.isEmpty()) return emptyList()
+        val escaped = term.replace("\\", "\\\\").replace("'", "\\'")
+        val query = "name contains '$escaped' and trashed = false"
+        val files = mutableListOf<DriveFile>()
+        var pageToken: String? = null
+        do {
+            val fields = "nextPageToken,files(id,name,mimeType,modifiedTime,size,thumbnailLink,webViewLink,parents,trashed,sharedWithMeTime)"
+            val page = pageToken?.let { "&pageToken=${URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
+            val address = "https://www.googleapis.com/drive/v3/files?q=${URLEncoder.encode(query, "UTF-8")}" +
+                "&spaces=drive&corpora=user&supportsAllDrives=true&includeItemsFromAllDrives=true" +
+                "&orderBy=folder,name_natural&pageSize=100&fields=$fields$page"
+            val response = JSONObject(request(accessToken, "GET", address).decodeToString())
+            val items = response.optJSONArray("files")
+            if (items != null) repeat(items.length()) { files += items.getJSONObject(it).toDriveFile() }
+            pageToken = response.optString("nextPageToken").takeIf { it.isNotBlank() }
+        } while (pageToken != null)
+        return files
+    }
+
     fun createFolder(accessToken: String, name: String, parentId: String? = null): String {
         val body = JSONObject().put("name", name).put("mimeType", "application/vnd.google-apps.folder")
         parentId?.let { body.put("parents", JSONArray().put(it)) }

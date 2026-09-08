@@ -171,6 +171,8 @@ class MediaPlaybackService : MediaSessionService() {
         val dataSourceFactory = DefaultDataSource.Factory(this, ManyDriveMediaDataSource.Factory())
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .setSeekBackIncrementMs(10_000L)
+            .setSeekForwardIncrementMs(10_000L)
             .build()
 
         val launchIntent = Intent(this, MainActivity::class.java)

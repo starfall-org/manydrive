@@ -18,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
@@ -44,8 +45,10 @@ internal fun DriveNavigationDrawer(
     onTrash: () -> Unit,
     onSettings: () -> Unit
 ) {
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val drawerWidth = (screenWidth - 56.dp).coerceAtLeast(240.dp).coerceAtMost(360.dp)
     ModalDrawerSheet(
-        modifier = Modifier.fillMaxHeight().widthIn(min = 288.dp, max = 360.dp),
+        modifier = Modifier.fillMaxHeight().width(drawerWidth),
         drawerShape = RoundedCornerShape(bottomEnd = 28.dp),
         drawerContainerColor = MaterialTheme.colorScheme.surface
     ) {
@@ -155,8 +158,7 @@ internal fun DriveRootTopBar(
     onQueryChange: (String) -> Unit,
     onMenu: () -> Unit,
     onAccounts: () -> Unit,
-    account: AccountEntry?,
-    shared: Boolean
+    account: AccountEntry?
 ) {
     Surface(color = MaterialTheme.colorScheme.surface) {
         Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)) {
@@ -186,23 +188,6 @@ internal fun DriveRootTopBar(
                 )
                 AccountAvatar(account = account, onClick = onAccounts)
             }
-            if (!shared) {
-                Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.Bottom) {
-                    Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Spacer(Modifier.weight(1f))
-                            Text("Drive của tôi", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Spacer(Modifier.height(10.dp))
-                            HorizontalDivider(thickness = 3.dp, color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.width(112.dp))
-                        }
-                    }
-                    Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                        Text("Máy tính", style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
         }
     }
 }
@@ -230,7 +215,7 @@ internal fun FolderBrowserTopBar(
                 TextField(
                     value = query,
                     onValueChange = onQueryChange,
-                    placeholder = { Text("Tìm trong thư mục") },
+                    placeholder = { Text("Tìm trong Drive") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                     colors = TextFieldDefaults.colors(
@@ -301,6 +286,9 @@ internal fun FileBrowserPage(
     account: AccountEntry,
     shared: Boolean,
     query: String,
+    searchResults: List<DriveFile>? = null,
+    searchLoading: Boolean = false,
+    searchError: String? = null,
     authorize: () -> Unit,
     openFolder: (DriveFile) -> Unit,
     openFile: (DriveFile) -> Unit,
@@ -318,8 +306,11 @@ internal fun FileBrowserPage(
     var sortMenu by remember { mutableStateOf(false) }
     var actionFile by remember { mutableStateOf<DriveFile?>(null) }
     val sort = runCatching { BrowserSort.valueOf(sortName) }.getOrDefault(defaultSort)
-    val visible = remember(model.files, query, sort, ascending) {
-        val filtered = if (query.isBlank()) model.files else model.files.filter { it.name.contains(query, ignoreCase = true) }
+    val globalSearch = query.isNotBlank() && searchResults != null
+    val visible = remember(model.files, searchResults, query, sort, ascending) {
+        val source = searchResults ?: model.files
+        val filtered = if (query.isBlank() || searchResults != null) source
+            else source.filter { it.name.contains(query, ignoreCase = true) }
         val sorted = when (sort) {
             BrowserSort.NAME -> filtered.sortedWith(compareByDescending<DriveFile> { it.isFolder }.thenBy { it.name.lowercase() })
             BrowserSort.MODIFIED -> filtered.sortedBy { it.modifiedTime.orEmpty() }
@@ -374,13 +365,19 @@ internal fun FileBrowserPage(
         model.message?.let {
             Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
         }
+        searchError?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
+        }
+        if (searchLoading) {
+            LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp))
+        }
         if (account.type == AccountType.GOOGLE && model.token == null && model.files.isEmpty()) {
             FilledTonalButton(onClick = authorize, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
                 Text("Cho phép Drive")
             }
         }
 
-        if (!model.loading && model.message == null && visible.isEmpty()) {
+        if (!model.loading && !searchLoading && model.message == null && searchError == null && visible.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(if (query.isBlank()) "Không có tệp trong vị trí này." else "Không tìm thấy tệp phù hợp.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -394,10 +391,10 @@ internal fun FileBrowserPage(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(visible, key = { it.id }) { file ->
-                    FileGridCard(file, shared, onOpen = openFolder, onPreview = openFile, onMenu = { actionFile = it })
+                    FileGridCard(file, shared && !globalSearch, onOpen = openFolder, onPreview = openFile, onMenu = { actionFile = it })
                 }
             }
-        } else if (shared) {
+        } else if (shared && !globalSearch) {
             val sections = remember(visible) { visible.groupBy(::sharedSection) }
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {

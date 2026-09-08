@@ -297,7 +297,7 @@ class MainActivity : ComponentActivity() {
                     ),
                     accountUi.copy(busy = accountUi.busy || model.uploading), ::activate, ::removeAccount,
                     { servicePicker.launch(arrayOf("application/json", "text/json", "text/plain", "application/octet-stream")) },
-                    ::openFolder, ::goUp, { pickUpload(true) }, ::pickAdditionalPhotos, ::restoreFile,
+                    ::openFolder, ::goUp, ::searchDrive, ::openSearchFolder, { pickUpload(true) }, ::pickAdditionalPhotos, ::restoreFile,
                     themeMode, superDark,
                     { themeMode = it; selection.edit().putString("theme", it.name).apply() },
                     { superDark = it; selection.edit().putBoolean("superDark", it).apply() },
@@ -394,6 +394,29 @@ class MainActivity : ComponentActivity() {
             model = model.copy(loading = false, message = null)
             return
         }
+        refresh()
+    }
+
+    private fun searchDrive(query: String, done: (Result<List<DriveFile>>) -> Unit) {
+        val account = accountUi.active
+        val token = model.token
+        if (account == null || account.type == AccountType.S3) {
+            done(Result.failure(UnsupportedOperationException("Tìm kiếm toàn Drive chỉ áp dụng cho Google Drive.")))
+            return
+        }
+        if (token == null) {
+            done(Result.failure(IllegalStateException("Cần cấp quyền Drive trước khi tìm kiếm.")))
+            return
+        }
+        lifecycleScope.launch {
+            val result = runCatching { withContext(Dispatchers.IO) { DriveApi.searchFiles(token, query) } }
+            done(result)
+        }
+    }
+
+    private fun openSearchFolder(file: DriveFile) {
+        if (!file.isFolder || model.loading || tab == 3) return
+        model = model.copy(path = listOf(file), files = emptyList(), fromCache = false)
         refresh()
     }
 

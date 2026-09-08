@@ -32,6 +32,7 @@ import com.starfall.gsadrive.ui.MediaMiniPlayer
 import com.starfall.gsadrive.ui.SettingsPage
 import com.starfall.gsadrive.ui.theme.ManyDriveTheme
 import com.starfall.gsadrive.ui.theme.ThemeMode
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,6 +56,8 @@ internal fun App(
     importService: () -> Unit = {},
     openFolder: (DriveFile) -> Unit = {},
     goUp: () -> Unit = {},
+    searchDrive: (String, (Result<List<DriveFile>>) -> Unit) -> Unit = { _, done -> done(Result.success(emptyList())) },
+    openSearchFolder: (DriveFile) -> Unit = {},
     uploadFolder: () -> Unit = {},
     pickAdditionalPhotos: () -> Unit = {},
     restoreFile: (DriveFile) -> Unit = {},
@@ -83,6 +86,9 @@ internal fun App(
     var newFolderName by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
     var folderSearching by remember { mutableStateOf(false) }
+    var globalSearchResults by remember { mutableStateOf<List<DriveFile>?>(null) }
+    var globalSearchLoading by remember { mutableStateOf(false) }
+    var globalSearchError by remember { mutableStateOf<String?>(null) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val drawerScope = rememberCoroutineScope()
     LaunchedEffect(accounts.revision) {
@@ -93,17 +99,66 @@ internal fun App(
     LaunchedEffect(selected, model.path.lastOrNull()?.id) {
         searchQuery = ""
         folderSearching = false
+        globalSearchResults = null
+        globalSearchLoading = false
+        globalSearchError = null
     }
     val active = accounts.active
+    LaunchedEffect(searchQuery, active?.key, selected) {
+        globalSearchError = null
+        val query = searchQuery.trim()
+        if (query.isEmpty() || selected !in 0..1 || active == null || active.type == AccountType.S3) {
+            globalSearchResults = null
+            globalSearchLoading = false
+            return@LaunchedEffect
+        }
+        val accountKey = active.key
+        globalSearchResults = emptyList()
+        globalSearchLoading = true
+        delay(350)
+        searchDrive(query) { result ->
+            if (searchQuery.trim() != query || accounts.active?.key != accountKey || selected !in 0..1) return@searchDrive
+            globalSearchLoading = false
+            result.onSuccess { globalSearchResults = it }
+                .onFailure {
+                    globalSearchResults = emptyList()
+                    globalSearchError = it.message ?: "Không thể tìm kiếm trên Drive."
+                }
+        }
+    }
     val tabs = listOf(
         Tab("Tệp", Icons.Outlined.Folder), Tab("Chia sẻ", Icons.Outlined.People), Tab("Ảnh", Icons.Outlined.Image)
     )
     val openAccounts = { showAccounts = true }
     val viewerExpanded = viewer != null && !viewer.minimized
+    val viewerBlack = viewerExpanded && viewer?.let { isSwipePreview(it.file) } == true
     val miniViewer = viewer?.takeIf { it.minimized && isMediaPreview(it.file) && it.localPath != null }
+    val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val normalDarkBars = when (themeMode) {
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+        ThemeMode.SYSTEM -> systemDark
+    }
+    val view = androidx.compose.ui.platform.LocalView.current
+    SideEffect {
+        val activity = view.context as? android.app.Activity ?: return@SideEffect
+        activity.window.statusBarColor = if (viewerBlack) android.graphics.Color.BLACK else android.graphics.Color.TRANSPARENT
+        activity.window.navigationBarColor = if (viewerBlack) android.graphics.Color.BLACK else android.graphics.Color.TRANSPARENT
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            activity.window.isNavigationBarContrastEnforced = false
+        }
+        androidx.core.view.WindowCompat.getInsetsController(activity.window, view).apply {
+            isAppearanceLightStatusBars = !viewerBlack && !normalDarkBars
+            isAppearanceLightNavigationBars = !viewerBlack && !normalDarkBars
+        }
+    }
     BackHandler(enabled = !viewerExpanded && showFabMenu) { showFabMenu = false }
     BackHandler(enabled = !viewerExpanded && drawerState.isOpen && !showFabMenu) { drawerScope.launch { drawerState.close() } }
     BackHandler(enabled = !viewerExpanded && showSettings && !drawerState.isOpen) { showSettings = false }
+    BackHandler(
+        enabled = !viewerExpanded && selected == 3 && !showFabMenu && !drawerState.isOpen && !showSettings &&
+            !showAccounts && !showTypes && !addingS3
+    ) { select(0) }
     BackHandler(enabled = !viewerExpanded && model.path.isNotEmpty() && !showSettings && !showAccounts && !showTypes && !addingS3 && !drawerState.isOpen) { goUp() }
 
     ModalNavigationDrawer(
@@ -133,6 +188,7 @@ internal fun App(
         }
     ) {
         Scaffold(
+            containerColor = if (viewerBlack) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.background,
             topBar = {
                 when {
                     !viewerExpanded && !showSettings && selected in 0..1 && active != null && model.path.isEmpty() ->
@@ -141,8 +197,7 @@ internal fun App(
                             onQueryChange = { searchQuery = it },
                             onMenu = { drawerScope.launch { drawerState.open() } },
                             onAccounts = openAccounts,
-                            account = active,
-                            shared = selected == 1
+                            account = active
                         )
                     !viewerExpanded && !showSettings && selected in 0..1 && active != null && model.path.isNotEmpty() ->
                         FolderBrowserTopBar(
@@ -192,7 +247,12 @@ internal fun App(
                             if (!viewerExpanded && !showSettings && active != null)
                                 AccountAvatar(active, openAccounts)
                         },
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = if (viewerBlack) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surface,
+                            titleContentColor = if (viewerBlack) androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurface,
+                            navigationIconContentColor = if (viewerBlack) androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurface,
+                            actionIconContentColor = if (viewerBlack) androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurface
+                        )
                     )
                 }
             },
@@ -273,42 +333,52 @@ internal fun App(
         ) { padding ->
             Box(Modifier.fillMaxSize()) {
                 when {
-                viewerExpanded && viewer != null && playback != null -> FileViewerPage(
-                    padding = padding, file = viewer.file, localPath = viewer.localPath, text = viewer.text,
-                    loading = viewer.loading, error = viewer.error, saving = viewer.saving,
-                    player = playback,
-                    swipeQueue = viewer.swipeQueue,
-                    swipeIndex = viewer.swipeIndex,
-                    onSwipeTo = swipeViewer,
-                    onBack = { if (isMediaPreview(viewer.file)) minimizeViewer() else closeViewer() },
-                    onTextChange = updateViewerText, onSaveText = saveViewerText
-                )
-                showSettings -> SettingsPage(padding, themeMode, superDark, setThemeMode, setSuperDark, clearCache)
-                active == null -> StoragePage(model, padding, null, { showTypes = true }, openAccounts, signOut, openFile = openFile)
-                else -> PullToRefreshBox(
-                    isRefreshing = model.loading,
-                    onRefresh = { if (!model.loading && !accounts.busy) reload() },
-                    modifier = Modifier.fillMaxSize().padding(padding)
-                ) {
-                    val contentPadding = PaddingValues(0.dp)
-                    when {
-                        selected == 3 -> TrashPage(model, contentPadding, restoreFile)
-                        selected == 2 -> PhotosPage(model, contentPadding, openAccounts, authorize)
-                        else -> FileBrowserPage(
-                            model = model,
-                            padding = contentPadding,
-                            account = active,
-                            shared = selected == 1,
-                            query = searchQuery,
-                            authorize = authorize,
-                            openFolder = openFolder,
-                            openFile = openFile,
-                            actions = fileActions.copy(
-                                trash = if (active.type != AccountType.S3 && selected == 0) fileActions.trash else null
+                    viewerExpanded && viewer != null && playback != null -> FileViewerPage(
+                        padding = padding,
+                        file = viewer.file,
+                        localPath = viewer.localPath,
+                        text = viewer.text,
+                        loading = viewer.loading,
+                        error = viewer.error,
+                        saving = viewer.saving,
+                        player = playback,
+                        swipeQueue = viewer.swipeQueue,
+                        swipeIndex = viewer.swipeIndex,
+                        previewPaths = viewer.previewPaths,
+                        onSwipeTo = swipeViewer,
+                        onBack = { if (isMediaPreview(viewer.file)) minimizeViewer() else closeViewer() },
+                        onTextChange = updateViewerText,
+                        onSaveText = saveViewerText
+                    )
+                    showSettings -> SettingsPage(padding, themeMode, superDark, setThemeMode, setSuperDark, clearCache)
+                    active == null -> StoragePage(model, padding, null, { showTypes = true }, openAccounts, signOut, openFile = openFile)
+                    else -> PullToRefreshBox(
+                        isRefreshing = model.loading,
+                        onRefresh = { if (!model.loading && !accounts.busy) reload() },
+                        modifier = Modifier.fillMaxSize().padding(padding)
+                    ) {
+                        val contentPadding = PaddingValues(0.dp)
+                        when {
+                            selected == 3 -> TrashPage(model, contentPadding, restoreFile)
+                            selected == 2 -> PhotosPage(model, contentPadding, openAccounts, authorize)
+                            else -> FileBrowserPage(
+                                model = model,
+                                padding = contentPadding,
+                                account = active,
+                                shared = selected == 1,
+                                query = searchQuery,
+                                searchResults = globalSearchResults,
+                                searchLoading = globalSearchLoading,
+                                searchError = globalSearchError,
+                                authorize = authorize,
+                                openFolder = if (globalSearchResults != null && searchQuery.isNotBlank()) openSearchFolder else openFolder,
+                                openFile = openFile,
+                                actions = fileActions.copy(
+                                    trash = if (active.type != AccountType.S3 && selected == 0) fileActions.trash else null
+                                )
                             )
-                        )
+                        }
                     }
-                }
                 }
                 if (showFabMenu) {
                     Box(

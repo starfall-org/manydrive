@@ -54,8 +54,10 @@ internal class ViewerCoordinator(
             loading = false,
             minimized = previous?.minimized ?: true,
             swipeQueue = queue,
-            swipeIndex = index
+            swipeIndex = index,
+            previewPaths = previous?.previewPaths.orEmpty()
         )
+        activeAccount()?.let { prefetchAdjacentImages(it, queue, index) }
     }
 
     fun open(file: DriveFile, minimized: Boolean = false, swipeQueue: List<DriveFile>? = null) {
@@ -85,8 +87,10 @@ internal class ViewerCoordinator(
             loading = true,
             minimized = minimized,
             swipeQueue = browsingQueue,
-            swipeIndex = browsingIndex
+            swipeIndex = browsingIndex,
+            previewPaths = cachedImagePaths(account.key, browsingQueue)
         )
+        prefetchAdjacentImages(account, browsingQueue, browsingIndex)
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -105,7 +109,14 @@ internal class ViewerCoordinator(
                 }
             }.onSuccess { (path, text) ->
                 if (request == generation && state?.file?.id == file.id) {
-                    state = state?.copy(localPath = path, text = text, loading = false, error = null)
+                    state = state?.copy(
+                        localPath = path,
+                        text = text,
+                        loading = false,
+                        error = null,
+                        previewPaths = if (file.mimeType.startsWith("image/"))
+                            state?.previewPaths.orEmpty() + (file.id to path) else state?.previewPaths.orEmpty()
+                    )
                 }
             }.onFailure {
                 if (request == generation && state?.file?.id == file.id) {
@@ -154,8 +165,10 @@ internal class ViewerCoordinator(
             loading = false,
             minimized = minimized,
             swipeQueue = browsingQueue,
-            swipeIndex = browsingIndex
+            swipeIndex = browsingIndex,
+            previewPaths = cachedImagePaths(account.key, browsingQueue)
         )
+        prefetchAdjacentImages(account, browsingQueue, browsingIndex)
 
         scope.launch {
             runCatching {
@@ -274,6 +287,41 @@ internal class ViewerCoordinator(
             temporary.copyTo(target, overwrite = true)
             temporary.delete()
         }
+    }
+
+    private fun cachedImagePaths(accountKey: String, queue: List<DriveFile>): Map<String, String> =
+        queue.asSequence().filter { it.mimeType.startsWith("image/") }.mapNotNull { item ->
+            previewCacheFile(accountKey, item).takeIf { it.isFile && it.length() > 0L }
+                ?.let { item.id to it.path }
+        }.toMap()
+
+    private fun prefetchAdjacentImages(account: AccountEntry, queue: List<DriveFile>, index: Int) {
+        if (index !in queue.indices) return
+        listOf(index - 1, index + 1).mapNotNull(queue::getOrNull)
+            .filter { it.mimeType.startsWith("image/") }
+            .forEach { item ->
+                val target = previewCacheFile(account.key, item)
+                if (target.isFile && target.length() > 0L) {
+                    state = state?.copy(previewPaths = state?.previewPaths.orEmpty() + (item.id to target.path))
+                    return@forEach
+                }
+                scope.launch {
+                    val result = runCatching {
+                        withContext(Dispatchers.IO) {
+                            if (!target.isFile || target.length() == 0L) {
+                                downloadPreview(account, item, target)
+                                prunePreviewCache()
+                            }
+                            target.path
+                        }
+                    }
+                    result.getOrNull()?.let { path ->
+                        if (state?.swipeQueue?.any { it.id == item.id } == true) {
+                            state = state?.copy(previewPaths = state?.previewPaths.orEmpty() + (item.id to path))
+                        }
+                    }
+                }
+            }
     }
 
     private fun previewCacheFile(account: String, file: DriveFile): File {
