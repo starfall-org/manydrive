@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.starfall.gsadrive"
-    compileSdk = 35
+    compileSdk = 36
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -42,6 +42,12 @@ android {
             storeFile = System.getenv("CM_KEYSTORE_PATH")?.let { file(it) }
             storePassword = System.getenv("CM_KEYSTORE_PASSWORD")
             keyAlias = System.getenv("CM_KEY_ALIAS")
+    packaging {
+        resources {
+            excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+        }
+    }
+
             keyPassword = System.getenv("CM_KEY_PASSWORD")
         }
     }
@@ -71,6 +77,10 @@ dependencies {
     implementation("aws.sdk.kotlin:s3:1.8.47")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.media3:media3-exoplayer:1.11.0")
+    implementation("androidx.media3:media3-ui:1.11.0")
+    implementation("androidx.media3:media3-ui-compose-material3:1.11.0")
+    implementation("androidx.media3:media3-session:1.11.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")

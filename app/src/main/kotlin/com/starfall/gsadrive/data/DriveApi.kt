@@ -2,6 +2,7 @@ package com.starfall.gsadrive.data
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URLEncoder
@@ -107,6 +108,44 @@ object DriveApi {
     }
 
     fun download(accessToken: String, fileId: String): ByteArray = request(accessToken, "GET", "https://www.googleapis.com/drive/v3/files/$fileId?alt=media")
+
+    fun downloadTo(accessToken: String, fileId: String, target: File) {
+        val connection = (URL("https://www.googleapis.com/drive/v3/files/$fileId?alt=media").openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            setRequestProperty("Authorization", "Bearer $accessToken")
+            connectTimeout = 15_000
+            readTimeout = 120_000
+        }
+        try {
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                val message = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                error("Drive API ($status): $message")
+            }
+            target.parentFile?.mkdirs()
+            connection.inputStream.use { input -> target.outputStream().buffered().use { output -> input.copyTo(output, 64 * 1024) } }
+        } finally { connection.disconnect() }
+    }
+
+    fun updateContent(accessToken: String, fileId: String, mimeType: String, content: ByteArray) {
+        val connection = (URL("https://www.googleapis.com/upload/drive/v3/files/$fileId?uploadType=media&supportsAllDrives=true")
+            .openConnection() as HttpURLConnection).apply {
+            requestMethod = "PATCH"
+            setRequestProperty("Authorization", "Bearer $accessToken")
+            setRequestProperty("Content-Type", mimeType.ifBlank { "text/plain; charset=UTF-8" })
+            connectTimeout = 15_000
+            readTimeout = 60_000
+            doOutput = true
+            setFixedLengthStreamingMode(content.size)
+        }
+        try {
+            connection.outputStream.use { it.write(content) }
+            val status = connection.responseCode
+            val body = (if (status in 200..299) connection.inputStream else connection.errorStream)
+                ?.bufferedReader()?.use { it.readText() }.orEmpty()
+            check(status in 200..299) { "Drive API ($status): $body" }
+        } finally { connection.disconnect() }
+    }
 
     private fun request(accessToken: String, method: String, address: String, payload: ByteArray? = null, contentType: String? = null): ByteArray {
         val connection = (URL(address).openConnection() as HttpURLConnection).apply {

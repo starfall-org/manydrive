@@ -2,10 +2,13 @@ package com.starfall.gsadrive.data
 
 import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
 import aws.sdk.kotlin.services.s3.S3Client
+import aws.sdk.kotlin.services.s3.model.GetObjectRequest
 import aws.sdk.kotlin.services.s3.model.ListObjectsV2Request
+import aws.sdk.kotlin.services.s3.model.PutObjectRequest
 import aws.smithy.kotlin.runtime.net.url.Url
 import aws.smithy.kotlin.runtime.content.ByteStream
 import aws.smithy.kotlin.runtime.content.fromFile
+import aws.smithy.kotlin.runtime.content.writeToFile
 import java.io.File
 
 data class S3Config(
@@ -30,21 +33,33 @@ object S3Api {
 
     suspend fun upload(config: S3Config, key: String, mimeType: String, file: File) {
         client(config).use { client ->
-            client.putObject {
+            client.putObject(PutObjectRequest {
                 bucket = config.bucket
                 this.key = key
                 contentType = mimeType
                 body = ByteStream.fromFile(file)
-            }
+            })
         }
     }
 
     suspend fun createFolder(config: S3Config, key: String) {
         client(config).use { client ->
-            client.putObject {
+            client.putObject(PutObjectRequest {
                 bucket = config.bucket
                 this.key = key
                 body = ByteStream.fromBytes(ByteArray(0))
+            })
+        }
+    }
+
+    suspend fun downloadTo(config: S3Config, key: String, target: File) {
+        target.parentFile?.mkdirs()
+        client(config).use { client ->
+            client.getObject(GetObjectRequest {
+                bucket = config.bucket
+                this.key = key
+            }) { response ->
+                requireNotNull(response.body) { "S3 không trả về nội dung tệp." }.writeToFile(target)
             }
         }
     }
@@ -71,10 +86,19 @@ object S3Api {
         "jpg", "jpeg" -> "image/jpeg"
         "png" -> "image/png"
         "gif" -> "image/gif"
-        "mp4" -> "video/mp4"
+        "webp" -> "image/webp"
+        "bmp" -> "image/bmp"
+        "mp4", "m4v" -> "video/mp4"
+        "webm" -> "video/webm"
+        "mkv" -> "video/x-matroska"
+        "mov" -> "video/quicktime"
         "mp3" -> "audio/mpeg"
+        "m4a", "aac" -> "audio/mp4"
+        "wav" -> "audio/wav"
+        "ogg", "oga" -> "audio/ogg"
+        "flac" -> "audio/flac"
         "pdf" -> "application/pdf"
-        "txt" -> "text/plain"
+        "txt", "md", "log", "csv", "json", "xml", "yaml", "yml", "kt", "java", "js", "ts", "html", "css", "py", "sh" -> "text/plain"
         else -> "application/octet-stream"
     }
 }

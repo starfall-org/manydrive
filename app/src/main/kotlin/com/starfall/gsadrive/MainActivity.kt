@@ -1,15 +1,21 @@
 package com.starfall.gsadrive
 
+import android.Manifest
 import android.accounts.Account
 import android.accounts.AccountManager
 import android.content.Intent
+import android.content.ComponentName
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import java.io.File
 import com.starfall.gsadrive.data.FileListCache
 import com.starfall.gsadrive.data.DocumentUploads
+import com.starfall.gsadrive.ui.FileViewerPage
+import com.starfall.gsadrive.ui.MediaMiniPlayer
 import com.starfall.gsadrive.ui.SettingsPage
 import com.starfall.gsadrive.ui.theme.ThemeMode
 import kotlinx.coroutines.CancellationException
@@ -33,10 +39,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.automirrored.outlined.Logout
@@ -45,6 +54,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Menu
+import androidx.compose.material.icons.outlined.Restore
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.AlertDialog
@@ -61,6 +73,12 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
@@ -75,6 +93,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,7 +102,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.lifecycleScope
+import androidx.core.content.ContextCompat
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
+import com.google.common.util.concurrent.ListenableFuture
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.AccountPicker
 import com.google.android.gms.common.api.Scope
@@ -115,6 +141,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var resolution: ActivityResultLauncher<IntentSenderRequest>
     private lateinit var folderPicker: ActivityResultLauncher<Uri?>
     private lateinit var filePicker: ActivityResultLauncher<Array<String>>
+    private lateinit var notificationPermissionLauncher: ActivityResultLauncher<String>
     private val authorization by lazy { Identity.getAuthorizationClient(this) }
     private val googleStore by lazy { AccountStore(this) }
     private val s3Store by lazy { S3AccountStore(this) }
@@ -131,14 +158,55 @@ class MainActivity : ComponentActivity() {
     private var serviceAvailable = true
     private var accountUi by mutableStateOf(AccountUi())
     private var model by mutableStateOf(Model())
+    private var playback by mutableStateOf<MediaController?>(null)
+    private var controllerFuture: ListenableFuture<MediaController>? = null
+    private val viewerCoordinator by lazy {
+        ViewerCoordinator(
+            context = this,
+            scope = lifecycleScope,
+            listCache = listingCache,
+            activeAccount = { accountUi.active },
+            accessToken = { model.token },
+            s3Config = { entry -> s3Accounts.accounts.firstOrNull { it.id == entry.id }?.config },
+            currentFiles = { model.files },
+            player = { playback },
+            awaitPlayer = {
+                playback ?: withContext(Dispatchers.IO) {
+                    controllerFuture?.get() ?: kotlin.error("Dịch vụ phát media chưa sẵn sàng.")
+                }
+            },
+            requestNotificationPermission = ::ensureNotificationPermission
+        )
+    }
+    private val viewer: ViewerState? get() = viewerCoordinator.state
     private var tab by mutableIntStateOf(0)
     private var generation = 0
+    private var photosLoadedForAccount: String? = null
     private var pendingAuthorization: String? = null
     private var pendingUpload: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                Toast.makeText(this, "Không có quyền thông báo: trình phát vẫn chạy nền nhưng điều khiển media có thể không hiện trên thanh thông báo.", Toast.LENGTH_LONG).show()
+            }
+        }
+        val sessionToken = SessionToken(this, ComponentName(this, MediaPlaybackService::class.java))
+        controllerFuture = MediaController.Builder(this, sessionToken).buildAsync().also { future ->
+            future.addListener({
+                runCatching { future.get() }
+                    .onSuccess { controller ->
+                        controller.addListener(playbackListener)
+                        playback = controller
+                        controller.currentMediaItem?.let(viewerCoordinator::syncToMediaItem)
+                    }
+                    .onFailure {
+                        Toast.makeText(this, "Không thể kết nối dịch vụ phát media.", Toast.LENGTH_LONG).show()
+                    }
+            }, ContextCompat.getMainExecutor(this))
+        }
         themeMode = runCatching { ThemeMode.valueOf(selection.getString("theme", "SYSTEM")!!) }.getOrDefault(ThemeMode.SYSTEM)
         superDark = selection.getBoolean("superDark", false)
         pendingUploadParent = savedInstanceState?.getString("uploadParent")
@@ -194,7 +262,7 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             ManyDriveTheme(themeMode, superDark) {
-                App(model, tab, ::selectTab, ::signIn, ::authorize, ::connectS3, ::signOut,
+                App(model, tab, ::selectTab, { refresh(forceNetwork = true) }, ::signIn, ::authorize, ::connectS3, ::signOut,
                     { pickUpload(false) }, ::createFolder, ::moveToTrash,
                     accountUi.copy(busy = accountUi.busy || model.uploading), ::activate, ::removeAccount,
                     { servicePicker.launch(arrayOf("application/json", "text/json", "text/plain", "application/octet-stream")) },
@@ -205,7 +273,9 @@ class MainActivity : ComponentActivity() {
                     { lifecycleScope.launch {
                         withContext(Dispatchers.IO) { listingCache.clearAll() }
                         Toast.makeText(this@MainActivity, "Đã xóa cache danh sách tệp", Toast.LENGTH_SHORT).show()
-                    } }
+                    } },
+                    viewer, ::openPreview, ::closePreview, ::updatePreviewText, ::savePreviewText,
+                    playback, ::minimizePreview, ::expandPreview
                 )
             }
         }
@@ -217,6 +287,19 @@ class MainActivity : ComponentActivity() {
         outState.putString("uploadAccount", pendingUpload)
         outState.putString("uploadParent", pendingUploadParent)
         super.onSaveInstanceState(outState)
+    }
+
+    override fun onDestroy() {
+        playback?.removeListener(playbackListener)
+        controllerFuture?.let(MediaController::releaseFuture)
+        playback = null
+        super.onDestroy()
+    }
+
+    private val playbackListener = object : Player.Listener {
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            mediaItem?.let(viewerCoordinator::syncToMediaItem)
+        }
     }
 
     private fun refreshAccounts() {
@@ -249,10 +332,12 @@ class MainActivity : ComponentActivity() {
 
     private fun activate(entry: AccountEntry) {
         if (model.uploading) return
+        if (viewer != null) closePreview()
         ++generation
         pendingAuthorization = null
         pendingUpload = null
         tab = 0
+        photosLoadedForAccount = null
         accountUi = accountUi.copy(active = entry, message = null)
         selection.edit().putString("active", entry.key).apply()
         model = Model(user = entry.name)
@@ -260,9 +345,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun selectTab(next: Int) {
-        if (model.uploading || !isTabEnabled(accountUi.active?.type, next)) return
-        if (tab != next) model = model.copy(path = emptyList(), files = emptyList(), fromCache = false)
+        if (model.uploading || !isTabEnabled(accountUi.active?.type, next) || tab == next) return
+        model = model.copy(path = emptyList(), files = emptyList(), fromCache = false)
         tab = next
+        val activeKey = accountUi.active?.key
+        if (next == 2 && activeKey != null && photosLoadedForAccount == activeKey) {
+            model = model.copy(loading = false, message = null)
+            return
+        }
         refresh()
     }
 
@@ -286,9 +376,13 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) { listingCache.write(account, location, files) }
     }
 
-    private fun refresh() {
+    private fun refresh(forceNetwork: Boolean = false) {
         val active = accountUi.active ?: return
         if (model.uploading) return
+        if (!forceNetwork && tab == 2 && photosLoadedForAccount == active.key) {
+            model = model.copy(loading = false, message = null)
+            return
+        }
         val request = ++generation
         val location = cacheLocation()
         val useCache = tab != 2
@@ -296,7 +390,10 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             val cached = if (useCache) withContext(Dispatchers.IO) { listingCache.read(active.key, location) } else null
             if (request != generation) return@launch
-            if (cached != null) model = model.copy(files = cached, fromCache = true)
+            if (cached != null) {
+                model = model.copy(files = cached, loading = forceNetwork, fromCache = true)
+                if (!forceNetwork) return@launch
+            }
             when (active.type) {
                 AccountType.GOOGLE -> authorize()
                 AccountType.S3 -> loadS3()
@@ -316,7 +413,11 @@ class MainActivity : ComponentActivity() {
 
     private fun authorize() {
         val entry = accountUi.active ?: return
-        if (entry.type != AccountType.GOOGLE) return refresh()
+        if (entry.type != AccountType.GOOGLE) return when (entry.type) {
+            AccountType.S3 -> loadS3()
+            AccountType.SERVICE -> loadService()
+            AccountType.GOOGLE -> Unit
+        }
         val request = ++generation
         model = model.copy(loading = true, message = null)
         val scopes = listOf(Scope(DRIVE_SCOPE)) + if (tab == 2) listOf(Scope(PHOTOS_SCOPE)) else emptyList()
@@ -352,7 +453,8 @@ class MainActivity : ComponentActivity() {
             }.onSuccess { (files, photos) ->
                 if (request == generation) {
                     model = model.copy(files = files, photos = photos, loading = false, fromCache = false)
-                    if (selectedTab != 2) cacheFiles(files)
+                    if (selectedTab == 2) photosLoadedForAccount = accountUi.active?.key
+                    else cacheFiles(files)
                 }
             }.onFailure { if (request == generation) error("Không thể tải dữ liệu Google. Hãy thử làm mới.") }
         }
@@ -493,10 +595,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun pickUpload(folder: Boolean) {
-        val account = accountUi.active ?: return
-        if (model.loading || model.uploading || tab == 2 || tab == 3) return
+        val account = accountUi.active
+        if (account == null) {
+            Toast.makeText(this, "Hãy thêm hoặc chọn một tài khoản trước khi tải lên.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (model.uploading) {
+            Toast.makeText(this, "Đang có một tác vụ tải lên.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (model.loading) {
+            Toast.makeText(this, "Danh sách đang cập nhật. Hãy thử lại ngay sau đó.", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (account.type == AccountType.SERVICE && model.path.isEmpty()) {
-            error("Mở một thư mục có quyền ghi trong bộ nhớ dùng chung để tải lên.")
+            Toast.makeText(this, "Mở một thư mục có quyền ghi của Service Account trước khi tải lên.", Toast.LENGTH_LONG).show()
             return
         }
         pendingUpload = account.key
@@ -549,7 +662,7 @@ class MainActivity : ComponentActivity() {
                 val message = if (result.isSuccess) "Đã tải lên $completed tệp." else
                     "Đã tải $completed tệp; tải lên bị dừng. Kiểm tra quyền ghi, dung lượng và kết nối. Các tệp đã tải được giữ lại."
                 Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
-                refresh()
+                refresh(forceNetwork = true)
             }
         }
     }
@@ -563,7 +676,7 @@ class MainActivity : ComponentActivity() {
             runCatching { withContext(Dispatchers.IO) {
                 DriveApi.restore(token, file.id)
                 listingCache.clear(account.key)
-            } }.onSuccess { if (request == generation) refresh() }
+            } }.onSuccess { if (request == generation) refresh(forceNetwork = true) }
                 .onFailure { if (request == generation) error("Không thể khôi phục tệp. Kiểm tra quyền và kết nối.") }
         }
     }
@@ -576,7 +689,7 @@ class MainActivity : ComponentActivity() {
         model = model.copy(loading = true, message = null)
         lifecycleScope.launch {
             runCatching { withContext(Dispatchers.IO) { DriveApi.createFolder(token, name.trim(), parentId); accountUi.active?.key?.let { listingCache.clear(it) } } }
-                .onSuccess { if (request == generation) refresh() }
+                .onSuccess { if (request == generation) refresh(forceNetwork = true) }
                 .onFailure { if (request == generation) error("Không thể tạo thư mục.") }
         }
     }
@@ -588,13 +701,34 @@ class MainActivity : ComponentActivity() {
         model = model.copy(loading = true, message = null)
         lifecycleScope.launch {
             runCatching { withContext(Dispatchers.IO) { DriveApi.moveToTrash(token, file.id); accountUi.active?.key?.let { listingCache.clear(it) } } }
-                .onSuccess { if (request == generation) refresh() }
+                .onSuccess { if (request == generation) refresh(forceNetwork = true) }
                 .onFailure { if (request == generation) error("Không thể chuyển tệp vào thùng rác.") }
         }
     }
 
+    private fun ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    private fun openPreview(file: DriveFile, minimized: Boolean = false, mediaQueue: List<DriveFile>? = null) =
+        viewerCoordinator.open(file, minimized, mediaQueue)
+
+    private fun closePreview() = viewerCoordinator.close()
+
+    private fun minimizePreview() = viewerCoordinator.minimize()
+
+    private fun expandPreview() = viewerCoordinator.expand()
+
+    private fun updatePreviewText(text: String) = viewerCoordinator.updateText(text)
+
+    private fun savePreviewText() = viewerCoordinator.saveText()
+
     private fun signOut() {
         if (model.uploading) return
+        if (viewer != null) closePreview()
         accountUi.active?.key?.let { key -> lifecycleScope.launch(Dispatchers.IO) { listingCache.clear(key) } }
         ++generation
         pendingAuthorization = null
@@ -604,561 +738,10 @@ class MainActivity : ComponentActivity() {
         selection.edit().putString("active", "").apply()
         accountUi = accountUi.copy(active = null)
         tab = 0
+        photosLoadedForAccount = null
         model = Model(message = "Đã đăng xuất.")
     }
 
     private fun accountError(message: String) { accountUi = accountUi.copy(busy = false, message = message) }
     private fun error(message: String) { model = model.copy(loading = false, message = message) }
-}
-
-private data class Model(
-    val user: String? = null, val token: String? = null,
-    val files: List<DriveFile> = emptyList(), val photos: List<PhotoItem> = emptyList(),
-    val loading: Boolean = false, val message: String? = null,
-    val path: List<DriveFile> = emptyList(),
-    val fromCache: Boolean = false, val uploading: Boolean = false
-)
-
-private enum class AccountType(val label: String) { GOOGLE("Google"), S3("S3"), SERVICE("Service Account") }
-private fun isTabEnabled(type: AccountType?, index: Int): Boolean = when (index) {
-    0 -> true
-    1 -> type == AccountType.GOOGLE || type == AccountType.SERVICE
-    2 -> type == AccountType.GOOGLE
-    3 -> type == AccountType.GOOGLE || type == AccountType.SERVICE
-    else -> false
-}
-
-private data class AccountEntry(val type: AccountType, val id: String, val name: String, val detail: String = "") {
-    val key: String get() = "${type.name}:$id"
-    val title: String get() = if (type == AccountType.S3) detail.ifBlank { name } else name.substringBefore('@')
-    val subtitle: String get() = if (type == AccountType.S3) name else id
-}
-private data class AccountUi(
-    val entries: List<AccountEntry> = emptyList(),
-    val active: AccountEntry? = null,
-    val busy: Boolean = false,
-    val message: String? = null,
-    val revision: Int = 0
-)
-
-private data class Tab(val label: String, val icon: ImageVector)
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun App(
-    model: Model,
-    selected: Int,
-    select: (Int) -> Unit,
-    signIn: () -> Unit,
-    authorize: () -> Unit,
-    connectS3: (String, S3Config) -> Unit,
-    signOut: () -> Unit,
-    upload: () -> Unit,
-    createFolder: (String) -> Unit,
-    trash: (DriveFile) -> Unit,
-    accounts: AccountUi = AccountUi(),
-    selectAccount: (AccountEntry) -> Unit = {},
-    removeAccount: (AccountEntry) -> Unit = {},
-    importService: () -> Unit = {},
-    openFolder: (DriveFile) -> Unit = {},
-    goUp: () -> Unit = {}
-) {
-    var showAccounts by remember { mutableStateOf(false) }
-    var showTypes by remember { mutableStateOf(false) }
-    var addingS3 by remember { mutableStateOf(false) }
-    var removing by remember { mutableStateOf<AccountEntry?>(null) }
-    LaunchedEffect(accounts.revision) {
-        showAccounts = false
-        showTypes = false
-        addingS3 = false
-    }
-    val active = accounts.active
-    val tabs = listOf(
-        Tab("Tệp", Icons.Outlined.Folder), Tab("Chia sẻ", Icons.Outlined.People), Tab("Ảnh", Icons.Outlined.Image)
-    )
-    val openAccounts = { showAccounts = true }
-    BackHandler(enabled = model.path.isNotEmpty() && !showAccounts && !showTypes && !addingS3) { goUp() }
-    Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("ManyDrive", fontWeight = FontWeight.SemiBold)
-                        active?.let { Text(it.type.label, style = MaterialTheme.typography.labelSmall) }
-                    }
-                },
-                actions = {
-                    IconButton(onClick = openAccounts) { Icon(Icons.Outlined.AccountCircle, "Tài khoản") }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-            )
-        },
-        bottomBar = {
-            NavigationBar {
-                tabs.forEachIndexed { index, item ->
-                    NavigationBarItem(selected = index == selected, onClick = { select(index) },
-                        enabled = isTabEnabled(active?.type, index),
-                        icon = { Icon(item.icon, item.label) }, label = { Text(item.label) })
-                }
-            }
-        }
-    ) { padding ->
-        if (active == null) {
-            StoragePage(model, padding, null, { showTypes = true }, openAccounts, signOut)
-        } else {
-            PullToRefreshBox(
-                isRefreshing = model.loading,
-                onRefresh = { if (!model.loading && !accounts.busy) select(selected) },
-                modifier = Modifier.fillMaxSize().padding(padding)
-            ) {
-                val contentPadding = PaddingValues(0.dp)
-                when {
-                    active.type != AccountType.GOOGLE -> StoragePage(model, contentPadding, active,
-                        { showTypes = true }, openAccounts, signOut, shared = selected == 1,
-                        openFolder = openFolder, goUp = goUp)
-                    selected == 2 -> PhotosPage(model, contentPadding, openAccounts, authorize)
-                    else -> DrivePage(model, contentPadding, openAccounts, authorize, signOut,
-                        upload, createFolder, trash, openFolder, goUp)
-                }
-            }
-        }
-    }
-
-    if (showAccounts) AlertDialog(
-        onDismissRequest = { if (!accounts.busy) showAccounts = false },
-        title = { Text("Tài khoản") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                accounts.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                if (active != null) TextButton(onClick = { showAccounts = false; signOut() }, enabled = !accounts.busy) { Text("Đăng xuất") }
-                if (accounts.busy) Loading()
-                if (accounts.entries.isEmpty()) Text("Chưa có tài khoản. Thêm Google, S3 hoặc Service Account để bắt đầu.")
-                accounts.entries.forEach { entry ->
-                    Surface(
-                        color = if (entry.key == active?.key) MaterialTheme.colorScheme.secondaryContainer
-                            else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Row(Modifier.weight(1f).clickable(enabled = !accounts.busy) {
-                                showAccounts = false
-                                selectAccount(entry)
-                            }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(if (entry.type == AccountType.S3) Icons.Outlined.Cloud else Icons.Outlined.AccountCircle,
-                                    null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
-                                Spacer(Modifier.width(12.dp))
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(entry.title, style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                    Text(entry.subtitle, style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        if (entry.key == active?.key) Icon(Icons.Outlined.CheckCircle, null, modifier = Modifier.size(14.dp))
-                                        Text(entry.type.label + if (entry.key == active?.key) " • Đang chọn" else "",
-                                            style = MaterialTheme.typography.labelSmall)
-                                    }
-                                }
-                            }
-                            IconButton(onClick = { removing = entry }, enabled = !accounts.busy) {
-                                Icon(Icons.AutoMirrored.Outlined.Logout, "Đăng xuất khỏi ${entry.title}")
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = { showTypes = true }, enabled = !accounts.busy) { Text("Thêm tài khoản") } },
-        dismissButton = { TextButton(onClick = { showAccounts = false }, enabled = !accounts.busy) { Text("Đóng") } }
-    )
-    if (showTypes) AlertDialog(
-        onDismissRequest = { showTypes = false },
-        title = { Text("Thêm tài khoản") },
-        text = {
-            Column(Modifier.fillMaxWidth()) {
-                TextButton(onClick = { showTypes = false; showAccounts = true; signIn() }) { Text("Google · Tài khoản trên thiết bị") }
-                TextButton(onClick = { showTypes = false; addingS3 = true }) { Text("S3 · Nhập thông tin kết nối") }
-                TextButton(onClick = { showTypes = false; showAccounts = true; importService() }) { Text("Service Account · Nhập file JSON") }
-            }
-        },
-        confirmButton = { TextButton(onClick = { showTypes = false }) { Text("Hủy") } }
-    )
-    if (addingS3) S3AccountDialog(onDismiss = { addingS3 = false }, loading = accounts.busy,
-        message = accounts.message, connect = connectS3)
-    removing?.let { entry ->
-        AlertDialog(onDismissRequest = { removing = null }, title = { Text("Đăng xuất khỏi ${entry.title}?") },
-            text = { Text("Tài khoản sẽ được gỡ khỏi danh sách đã lưu trong ứng dụng. Tệp trên đám mây vẫn được giữ nguyên.") },
-            confirmButton = { TextButton(onClick = { removeAccount(entry); removing = null }) { Text("Đăng xuất") } },
-            dismissButton = { TextButton(onClick = { removing = null }) { Text("Hủy") } })
-    }
-}
-
-@Composable
-private fun StoragePage(
-    model: Model,
-    padding: PaddingValues,
-    account: AccountEntry?,
-    add: () -> Unit,
-    accounts: () -> Unit,
-    signOut: () -> Unit,
-    shared: Boolean = false,
-    openFolder: (DriveFile) -> Unit = {},
-    goUp: () -> Unit = {}
-) {
-    LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (account == null) item {
-            Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.large,
-                modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Tệp của bạn", style = MaterialTheme.typography.titleLarge)
-                    Text("Kết nối Google, S3 hoặc Service Account để xem tệp.")
-                    FilledTonalButton(onClick = add) { Text("Thêm tài khoản") }
-                    TextButton(onClick = accounts) { Text("Tài khoản đã lưu") }
-                }
-            }
-        }
-        if (shared) item { Text("Chia sẻ với tôi", style = MaterialTheme.typography.titleMedium) }
-        if (model.path.isNotEmpty()) item { FolderNavigation(model.path, goUp) }
-        model.message?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
-        if (model.loading) item { Loading() }
-        if (account != null && !model.loading && model.message == null && model.files.isEmpty()) item { Text("Chưa có tệp để hiển thị.") }
-        items(model.files, key = { it.id }) { FileRow(it, onOpen = openFolder, enabled = !model.loading) }
-    }
-}
-
-@Composable
-private fun DrivePage(
-    model: Model,
-    padding: PaddingValues,
-    signIn: () -> Unit,
-    authorize: () -> Unit,
-    signOut: () -> Unit,
-    upload: () -> Unit,
-    createFolder: (String) -> Unit,
-    trash: (DriveFile) -> Unit,
-    openFolder: (DriveFile) -> Unit = {},
-    goUp: () -> Unit = {}
-) {
-    var folderName by remember { mutableStateOf("") }
-    LazyColumn(
-        Modifier.fillMaxSize().padding(padding),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            Surface(
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                shape = MaterialTheme.shapes.large,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(20.dp)) {
-                    Text(model.user?.let { "$it’s Drive" } ?: "Lưu trữ cùng Google Drive",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(6.dp))
-                    Text(if (model.user == null) "Thêm tài khoản để quản lý tệp." else "Bấm biểu tượng tài khoản để chuyển hoặc thêm tài khoản.")
-                    Spacer(Modifier.height(12.dp))
-                    if (model.user == null) FilledTonalButton(onClick = signIn) { Text("Thêm tài khoản") }
-                    else if (model.token == null) FilledTonalButton(onClick = authorize) { Text("Cho phép Drive") }
-                    else {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilledTonalButton(onClick = upload) {
-                                Icon(
-                                    Icons.Outlined.UploadFile,
-                                    null
-                                ); Spacer(Modifier.width(6.dp)); Text("Tải tệp lên")
-                            }
-                            FilledTonalButton(onClick = signOut) { Text("Đăng xuất") }
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 10.dp)) {
-                            OutlinedTextField(
-                                folderName,
-                                { folderName = it },
-                                label = { Text("Thư mục mới") },
-                                singleLine = true,
-                                modifier = Modifier.weight(1f)
-                            )
-                            FilledTonalButton(
-                                onClick = { createFolder(folderName); folderName = "" },
-                                enabled = folderName.isNotBlank(),
-                                modifier = Modifier.padding(start = 8.dp)
-                            ) { Text("Tạo") }
-                        }
-                    }
-                }
-            }
-        }
-        model.message?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
-        if (model.loading) item { Loading() }
-        if (!model.loading && model.token != null && model.files.isEmpty()) item { Text("Không có tệp trong vị trí này.") }
-        if (model.path.isNotEmpty()) item { FolderNavigation(model.path, goUp) }
-        items(model.files, key = { it.id }) { FileRow(it, trash, openFolder, !model.loading) }
-    }
-}
-
-@Composable
-private fun PhotosPage(model: Model, padding: PaddingValues, signIn: () -> Unit, authorize: () -> Unit) {
-    LazyColumn(
-        Modifier.fillMaxSize().padding(padding),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item { Text("Google Photos", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold) }
-        item {
-            Text(
-                "Google chỉ cho phép app đọc ảnh do chính app tạo. Để chọn ảnh bất kỳ, cần dùng Google Photos Picker.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        if (model.user == null) item { FilledTonalButton(onClick = signIn) { Text("Thêm tài khoản") } }
-        else if (model.token == null) item { FilledTonalButton(onClick = authorize) { Text("Cho phép Photos") } }
-        if (model.loading) item { Loading() }
-        items(model.photos, key = { it.id }) { photo ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Outlined.Image,
-                    null,
-                    tint = MaterialTheme.colorScheme.primary
-                ); Spacer(Modifier.width(16.dp)); Column {
-                Text(photo.filename); Text(
-                photo.mimeType,
-                style = MaterialTheme.typography.bodySmall
-            )
-            }
-            }
-        }
-    }
-}
-
-@Composable
-private fun S3AccountDialog(
-    onDismiss: () -> Unit,
-    loading: Boolean = false,
-    message: String? = null,
-    connect: (String, S3Config) -> Unit
-) {
-    var name by remember { mutableStateOf("") }
-    var endpoint by remember { mutableStateOf("") }
-    var key by remember { mutableStateOf("") }
-    var secret by remember { mutableStateOf("") }
-    var bucket by remember { mutableStateOf("") }
-    var region by remember { mutableStateOf("us-east-1") }
-    val validEndpoint = runCatching {
-        val uri = java.net.URI(endpoint.trim())
-        uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.userInfo == null && uri.query == null && uri.fragment == null
-    }.getOrDefault(false)
-    AlertDialog(
-        onDismissRequest = { if (!loading) onDismiss() },
-        title = { Text("Thêm tài khoản S3") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                if (loading) Loading()
-                OutlinedTextField(name, { name = it }, label = { Text("Tên tài khoản") }, enabled = !loading, singleLine = true)
-                OutlinedTextField(endpoint, { endpoint = it }, label = { Text("Endpoint HTTPS") }, enabled = !loading, singleLine = true)
-                OutlinedTextField(bucket, { bucket = it }, label = { Text("Bucket") }, enabled = !loading, singleLine = true)
-                OutlinedTextField(region, { region = it }, label = { Text("Region") }, enabled = !loading, singleLine = true)
-                OutlinedTextField(key, { key = it }, label = { Text("Access key") }, enabled = !loading, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    visualTransformation = PasswordVisualTransformation())
-                OutlinedTextField(secret, { secret = it }, label = { Text("Secret key") }, enabled = !loading, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    visualTransformation = PasswordVisualTransformation())
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = !loading && name.isNotBlank() && validEndpoint && key.isNotBlank() && secret.isNotBlank() && bucket.isNotBlank(),
-                onClick = { connect(name.trim(), S3Config(endpoint.trim(), key.trim(), secret, bucket.trim(), region.trim().ifBlank { "us-east-1" })) }
-            ) { Text("Kết nối và lưu") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !loading) { Text("Hủy") } }
-    )
-}
-
-@Composable
-private fun FolderNavigation(path: List<DriveFile>, goUp: () -> Unit) {
-    if (path.isNotEmpty()) Column {
-        TextButton(onClick = goUp) { Text("← Thư mục cha") }
-        Text(path.joinToString(" / ") { it.name }, style = MaterialTheme.typography.titleMedium)
-    }
-}
-
-@Composable
-private fun FileRow(file: DriveFile, onDelete: ((DriveFile) -> Unit)? = null,
-    onOpen: (DriveFile) -> Unit = {}, enabled: Boolean = true) =
-    Row(Modifier.fillMaxWidth().clickable(enabled = enabled && file.isFolder) { onOpen(file) }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            if (file.isFolder) Icons.Outlined.Folder else Icons.Outlined.Description,
-            null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(28.dp)
-        ); Spacer(Modifier.width(16.dp))
-        Column(Modifier.weight(1f)) {
-            Text(file.name); Text(
-            file.description,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        }
-        onDelete?.let { IconButton(onClick = { it(file) }) { Icon(Icons.Outlined.Delete, "Chuyển vào thùng rác") } }
-    }
-
-@Composable
-private fun Loading() =
-    Box(Modifier.fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-
-// Keep previews alongside the private UI components so they need no Activity or services.
-@Preview(name = "Sáng", group = "ManyDrive", showBackground = true, widthDp = 400, heightDp = 850)
-@Preview(name = "Tối", group = "ManyDrive", showBackground = true, widthDp = 400, heightDp = 850,
-    uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Target(AnnotationTarget.FUNCTION)
-@Retention(AnnotationRetention.BINARY)
-private annotation class ScreenPreviews
-
-@Preview(name = "Sáng", group = "Components", showBackground = true, widthDp = 400)
-@Preview(name = "Tối", group = "Components", showBackground = true, widthDp = 400,
-    uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Target(AnnotationTarget.FUNCTION)
-@Retention(AnnotationRetention.BINARY)
-private annotation class ComponentPreviews
-
-private val previewFiles = listOf(
-    DriveFile("folder", "Tài liệu công việc", "application/vnd.google-apps.folder", null),
-    DriveFile("pdf", "Kế hoạch dự án.pdf", "application/pdf", "2026-09-08T09:30:00.000Z"),
-    DriveFile("image", "Ảnh chuyến đi cuối tuần.jpg", "image/jpeg", "2026-09-07T14:15:00.000Z")
-)
-
-private val previewModel = Model(
-    user = "Minh Anh",
-    token = "preview-token",
-    files = previewFiles,
-    photos = listOf(
-        PhotoItem("photo-1", "Hoàng hôn trên biển.jpg", "image/jpeg", null),
-        PhotoItem("photo-2", "Chuyến đi Đà Lạt.png", "image/png", null)
-    )
-)
-
-@Composable
-private fun PreviewSurface(content: @Composable () -> Unit) {
-    ManyDriveTheme {
-        Surface { content() }
-    }
-}
-
-@ScreenPreviews
-@Composable
-private fun AppPreview() {
-    var selected by remember { mutableIntStateOf(0) }
-    PreviewSurface {
-        App(
-            model = previewModel, selected = selected, select = { selected = it },
-            signIn = {}, authorize = {}, connectS3 = { _, _ -> }, signOut = {}, upload = {},
-            createFolder = {}, trash = {},
-            accounts = AccountUi(
-                entries = listOf(AccountEntry(AccountType.GOOGLE, "minhanh@example.com", "Minh Anh"),
-                    AccountEntry(AccountType.S3, "preview-s3", "Kho công việc", "documents"),
-                    AccountEntry(AccountType.SERVICE, "drive@example.iam.gserviceaccount.com", "drive@example.iam.gserviceaccount.com")),
-                active = AccountEntry(AccountType.GOOGLE, "minhanh@example.com", "Minh Anh")
-            )
-        )
-    }
-}
-
-@Composable
-private fun DrivePagePreviewContent(model: Model) {
-    PreviewSurface {
-        DrivePage(
-            model = model, padding = PaddingValues(0.dp), signIn = {}, authorize = {},
-            signOut = {}, upload = {}, createFolder = {}, trash = {}
-        )
-    }
-}
-
-@ScreenPreviews
-@Composable
-private fun DrivePagePreview() = DrivePagePreviewContent(previewModel)
-
-@ScreenPreviews
-@Composable
-private fun DriveSignedOutPreview() = DrivePagePreviewContent(Model())
-
-@ScreenPreviews
-@Composable
-private fun DriveAuthorizationPreview() = DrivePagePreviewContent(previewModel.copy(token = null, files = emptyList()))
-
-@ScreenPreviews
-@Composable
-private fun DriveEmptyPreview() = DrivePagePreviewContent(previewModel.copy(files = emptyList()))
-
-@ScreenPreviews
-@Composable
-private fun DriveLoadingPreview() = DrivePagePreviewContent(previewModel.copy(loading = true, files = emptyList()))
-
-@ScreenPreviews
-@Composable
-private fun DriveErrorPreview() = DrivePagePreviewContent(
-    previewModel.copy(message = "Không thể tải danh sách tệp. Vui lòng thử lại.", files = emptyList())
-)
-
-@ScreenPreviews
-@Composable
-private fun PhotosPagePreview() {
-    PreviewSurface { PhotosPage(previewModel, PaddingValues(0.dp), {}, {}) }
-}
-
-@ScreenPreviews
-@Composable
-private fun PhotosSignedOutPreview() {
-    PreviewSurface { PhotosPage(Model(), PaddingValues(0.dp), {}, {}) }
-}
-
-@ScreenPreviews
-@Composable
-private fun S3PagePreview() {
-    PreviewSurface {
-        StoragePage(Model(files = previewFiles), PaddingValues(0.dp),
-            AccountEntry(AccountType.S3, "s3-preview", "Kho công việc", "documents"), {}, {}, {})
-    }
-}
-
-@ScreenPreviews
-@Composable
-private fun ServiceAccountPagePreview() {
-    PreviewSurface {
-        StoragePage(Model(files = previewFiles), PaddingValues(0.dp),
-            AccountEntry(AccountType.SERVICE, "drive@example.iam.gserviceaccount.com", "drive@example.iam.gserviceaccount.com"), {}, {}, {})
-    }
-}
-
-@ScreenPreviews
-@Composable
-private fun AccountsEmptyPreview() {
-    PreviewSurface { StoragePage(Model(), PaddingValues(0.dp), null, {}, {}, {}) }
-}
-
-@ComponentPreviews
-@Composable
-private fun FileRowPreview() {
-    PreviewSurface { FileRow(previewFiles[1], onDelete = {}) }
-}
-
-@ComponentPreviews
-@Composable
-private fun FolderRowPreview() {
-    PreviewSurface { FileRow(previewFiles[0]) }
-}
-
-@ComponentPreviews
-@Composable
-private fun LoadingPreview() {
-    PreviewSurface { Loading() }
-}
-
-@ScreenPreviews
-@Composable
-private fun S3AddAccountPreview() {
-    PreviewSurface { S3AccountDialog(onDismiss = {}, connect = { _, _ -> }) }
 }
