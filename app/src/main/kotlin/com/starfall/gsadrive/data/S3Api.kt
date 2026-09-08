@@ -2,6 +2,7 @@ package com.starfall.gsadrive.data
 
 import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
 import aws.sdk.kotlin.services.s3.S3Client
+import aws.sdk.kotlin.services.s3.model.ListObjectsV2Request
 import aws.smithy.kotlin.runtime.net.url.Url
 
 data class S3Config(
@@ -23,12 +24,12 @@ object S3Api {
             secretAccessKey = config.secretKey
         }
     }.use { client ->
-        val response = client.listObjectsV2 {
+        val response = client.listObjectsV2(ListObjectsV2Request {
             bucket = config.bucket
             this.prefix = prefix
             delimiter = "/"
             maxKeys = 1_000
-        }
+        })
         val folders = response.commonPrefixes.orEmpty().mapNotNull { item -> item.prefix }.map { key ->
             DriveFile(id = key, name = key.removePrefix(prefix).removeSuffix("/"), mimeType = "application/vnd.google-apps.folder", modifiedTime = null)
         }
