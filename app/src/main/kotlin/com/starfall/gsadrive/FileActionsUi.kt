@@ -23,7 +23,74 @@ import androidx.compose.ui.unit.dp
 import com.starfall.gsadrive.data.DriveFile
 import com.starfall.gsadrive.data.DrivePermission
 
-private enum class FileActionMode { MAIN, PERMISSIONS, MOVE, INFO }
+private enum class FileActionMode { MAIN, PERMISSIONS, MOVE, PHOTOS, INFO }
+private enum class MultiFileActionMode { MAIN, MOVE, PHOTOS }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun MultiFileActionsSheet(
+    files: List<DriveFile>,
+    account: AccountEntry,
+    actions: FileActionCallbacks,
+    onDismiss: () -> Unit,
+    onActionDone: () -> Unit
+) {
+    var mode by remember(files.map { it.id }) { mutableStateOf(MultiFileActionMode.MAIN) }
+    val driveActions = account.type != AccountType.S3
+
+    ModalBottomSheet(onDismissRequest = onDismiss, dragHandle = { BottomSheetDefaults.DragHandle() }) {
+        when (mode) {
+            MultiFileActionMode.MAIN -> {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Outlined.CheckCircle, null, modifier = Modifier.size(32.dp))
+                    Spacer(Modifier.width(18.dp))
+                    Text(
+                        "${files.size} mục đã chọn",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                if (driveActions) {
+                    ActionRow(Icons.Outlined.DriveFileMove, "Di chuyển") {
+                        mode = MultiFileActionMode.MOVE
+                    }
+                }
+                ActionRow(Icons.Outlined.AddPhotoAlternate, "Tải lên Photos") {
+                    if (files.any { it.isFolder }) mode = MultiFileActionMode.PHOTOS
+                    else {
+                        actions.uploadManyToPhotos?.invoke(files, PhotosFolderUploadMode.RAW)
+                        onActionDone()
+                    }
+                }
+                if (driveActions && actions.trashMany != null) {
+                    ActionRow(Icons.Outlined.Delete, "Chuyển vào thùng rác") {
+                        actions.trashMany.invoke(files)
+                        onActionDone()
+                    }
+                }
+            }
+            MultiFileActionMode.MOVE -> MoveManyPanel(
+                files = files,
+                actions = actions,
+                onBack = { mode = MultiFileActionMode.MAIN },
+                onDone = onActionDone
+            )
+            MultiFileActionMode.PHOTOS -> PhotosFolderModePanel(
+                files = files,
+                actions = actions,
+                multiple = true,
+                onBack = { mode = MultiFileActionMode.MAIN },
+                onDone = onActionDone
+            )
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,6 +115,13 @@ internal fun FileActionsSheet(
                 onPermissions = { mode = FileActionMode.PERMISSIONS },
                 onRename = { showRename = true },
                 onMove = { mode = FileActionMode.MOVE },
+                onUploadPhotos = {
+                    if (file.isFolder) mode = FileActionMode.PHOTOS
+                    else {
+                        actions.uploadToPhotos?.invoke(file, PhotosFolderUploadMode.RAW)
+                        onDismiss()
+                    }
+                },
                 onInfo = { mode = FileActionMode.INFO },
                 onDismiss = onDismiss
             )
@@ -59,6 +133,13 @@ internal fun FileActionsSheet(
             FileActionMode.MOVE -> MovePanel(
                 file = file,
                 actions = actions,
+                onBack = { mode = FileActionMode.MAIN },
+                onDone = onDismiss
+            )
+            FileActionMode.PHOTOS -> PhotosFolderModePanel(
+                files = listOf(file),
+                actions = actions,
+                multiple = false,
                 onBack = { mode = FileActionMode.MAIN },
                 onDone = onDismiss
             )
@@ -90,6 +171,7 @@ private fun MainActions(
     onPermissions: () -> Unit,
     onRename: () -> Unit,
     onMove: () -> Unit,
+    onUploadPhotos: () -> Unit,
     onInfo: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -118,10 +200,7 @@ private fun MainActions(
         ActionRow(Icons.Outlined.DriveFileMove, "Di chuyển", onMove)
     }
     if (actions.uploadToPhotos != null && (file.isFolder || file.mimeType.startsWith("image/") || file.mimeType.startsWith("video/"))) {
-        ActionRow(Icons.Outlined.AddPhotoAlternate, "Tải lên Google Photos") {
-            actions.uploadToPhotos.invoke(file)
-            onDismiss()
-        }
+        ActionRow(Icons.Outlined.AddPhotoAlternate, "Tải lên Google Photos", onUploadPhotos)
     }
     ActionRow(Icons.Outlined.Info, "Xem thông tin", onInfo)
     if (driveActions && actions.trash != null) {
@@ -306,6 +385,129 @@ private fun MovePanel(file: DriveFile, actions: FileActionCallbacks, onBack: () 
             actions.move(file, destination) { result ->
                 moving = false
                 result.onSuccess { onDone() }.onFailure { error = it.message ?: "Không thể di chuyển." }
+            }
+        }) { Text("Di chuyển vào đây") }
+    }
+}
+
+@Composable
+private fun PhotosFolderModePanel(
+    files: List<DriveFile>,
+    actions: FileActionCallbacks,
+    multiple: Boolean,
+    onBack: () -> Unit,
+    onDone: () -> Unit
+) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Quay lại") }
+        Column(Modifier.weight(1f)) {
+            Text("Tải lên Photos", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(
+                if (multiple) "${files.size} mục đã chọn" else files.firstOrNull()?.name.orEmpty(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    ActionRow(Icons.Outlined.PhotoLibrary, "Upload thô") {
+        if (multiple) actions.uploadManyToPhotos?.invoke(files, PhotosFolderUploadMode.RAW)
+        else files.firstOrNull()?.let { actions.uploadToPhotos?.invoke(it, PhotosFolderUploadMode.RAW) }
+        onDone()
+    }
+    Text(
+        "Ảnh và video trong thư mục được tải trực tiếp vào thư viện Photos, không tạo album.",
+        modifier = Modifier.padding(start = 76.dp, end = 24.dp, bottom = 8.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    ActionRow(Icons.Outlined.PhotoAlbum, "Upload dưới dạng album") {
+        if (multiple) actions.uploadManyToPhotos?.invoke(files, PhotosFolderUploadMode.ALBUM)
+        else files.firstOrNull()?.let { actions.uploadToPhotos?.invoke(it, PhotosFolderUploadMode.ALBUM) }
+        onDone()
+    }
+    Text(
+        "Mỗi thư mục gốc được chọn sẽ tạo một album cùng tên; ảnh và video bên trong được đưa vào album đó.",
+        modifier = Modifier.padding(start = 76.dp, end = 24.dp, bottom = 8.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+@Composable
+private fun MoveManyPanel(
+    files: List<DriveFile>,
+    actions: FileActionCallbacks,
+    onBack: () -> Unit,
+    onDone: () -> Unit
+) {
+    val selectionKey = remember(files) { files.map { it.id }.sorted().joinToString(":") }
+    val selectedFolderIds = remember(files) { files.filter { it.isFolder }.map { it.id }.toSet() }
+    var path by remember(selectionKey) { mutableStateOf<List<DriveFile>>(emptyList()) }
+    var folders by remember(selectionKey) { mutableStateOf<List<DriveFile>>(emptyList()) }
+    var loading by remember(selectionKey) { mutableStateOf(true) }
+    var moving by remember(selectionKey) { mutableStateOf(false) }
+    var error by remember(selectionKey) { mutableStateOf<String?>(null) }
+
+    fun load(parentId: String?) {
+        loading = true
+        error = null
+        actions.loadFolders(parentId) { result ->
+            loading = false
+            result.onSuccess { folders = it.filterNot { folder -> folder.id in selectedFolderIds } }
+                .onFailure { error = it.message ?: "Không thể tải danh sách thư mục." }
+        }
+    }
+
+    LaunchedEffect(selectionKey) { load(null) }
+
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = {
+            if (path.isEmpty()) onBack() else {
+                path = path.dropLast(1)
+                load(path.lastOrNull()?.id)
+            }
+        }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Quay lại") }
+        Column(Modifier.weight(1f)) {
+            Text("Di chuyển ${files.size} mục", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(
+                path.lastOrNull()?.name ?: "Drive của tôi",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+    if (loading || moving) LinearProgressIndicator(Modifier.fillMaxWidth())
+    error?.let {
+        CopyableError(
+            it,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+        )
+    }
+    LazyColumn(Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 380.dp)) {
+        items(folders, key = { it.id }) { folder ->
+            ListItem(
+                headlineContent = { Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                leadingContent = { Icon(Icons.Outlined.Folder, null) },
+                modifier = Modifier.clickable(enabled = !loading && !moving) {
+                    path = path + folder
+                    load(folder.id)
+                }
+            )
+        }
+    }
+    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.End) {
+        Button(enabled = !loading && !moving, onClick = {
+            moving = true
+            error = null
+            val destination = path.lastOrNull()?.id ?: "root"
+            actions.moveMany(files, destination) { result ->
+                moving = false
+                result.onSuccess { onDone() }
+                    .onFailure { error = it.message ?: "Không thể di chuyển các mục đã chọn." }
             }
         }) { Text("Di chuyển vào đây") }
     }

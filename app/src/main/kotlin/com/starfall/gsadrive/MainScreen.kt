@@ -473,7 +473,8 @@ internal fun App(
                                         },
                                         openFile = { file, queue -> if (page == selected) openFile(file, queue) },
                                         actions = fileActions.copy(
-                                            trash = if (active.type != AccountType.S3 && page == 0) fileActions.trash else null
+                                            trash = if (active.type != AccountType.S3 && page == 0) fileActions.trash else null,
+                                            trashMany = if (active.type != AccountType.S3 && page == 0) fileActions.trashMany else null
                                         )
                                     )
                                 }

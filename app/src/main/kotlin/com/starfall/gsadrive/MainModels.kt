@@ -82,13 +82,18 @@ internal data class AccountUi(
 internal data class Tab(val label: String, val icon: ImageVector)
 
 
+internal enum class PhotosFolderUploadMode { RAW, ALBUM }
+
 internal data class FileActionCallbacks(
-    val uploadToPhotos: ((DriveFile) -> Unit)? = null,
+    val uploadToPhotos: ((DriveFile, PhotosFolderUploadMode) -> Unit)? = null,
+    val uploadManyToPhotos: ((List<DriveFile>, PhotosFolderUploadMode) -> Unit)? = null,
     val share: (DriveFile, String, String, (Result<Unit>) -> Unit) -> Unit = { _, _, _, done -> done(Result.failure(UnsupportedOperationException())) },
     val rename: (DriveFile, String, (Result<Unit>) -> Unit) -> Unit = { _, _, done -> done(Result.failure(UnsupportedOperationException())) },
     val loadPermissions: (DriveFile, (Result<List<com.starfall.gsadrive.data.DrivePermission>>) -> Unit) -> Unit = { _, done -> done(Result.failure(UnsupportedOperationException())) },
     val removePermission: (DriveFile, com.starfall.gsadrive.data.DrivePermission, (Result<Unit>) -> Unit) -> Unit = { _, _, done -> done(Result.failure(UnsupportedOperationException())) },
     val loadFolders: (String?, (Result<List<DriveFile>>) -> Unit) -> Unit = { _, done -> done(Result.failure(UnsupportedOperationException())) },
     val move: (DriveFile, String, (Result<Unit>) -> Unit) -> Unit = { _, _, done -> done(Result.failure(UnsupportedOperationException())) },
-    val trash: ((DriveFile) -> Unit)? = null
+    val moveMany: (List<DriveFile>, String, (Result<Unit>) -> Unit) -> Unit = { _, _, done -> done(Result.failure(UnsupportedOperationException())) },
+    val trash: ((DriveFile) -> Unit)? = null,
+    val trashMany: ((List<DriveFile>) -> Unit)? = null
 )

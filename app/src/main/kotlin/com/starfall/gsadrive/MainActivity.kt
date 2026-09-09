@@ -236,7 +236,8 @@ class MainActivity : ComponentActivity() {
     private var pendingAuthorization: String? = null
     private var pendingAuthorizationTarget: BrowserRefreshTarget? = null
     private var pendingPhotosAuthorization: String? = null
-    private var pendingPhotosFile: DriveFile? = null
+    private var pendingPhotosFiles: List<DriveFile> = emptyList()
+    private var pendingPhotosMode: PhotosFolderUploadMode = PhotosFolderUploadMode.RAW
     private var pendingUpload: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -274,24 +275,37 @@ class MainActivity : ComponentActivity() {
         pendingUploadParent = savedInstanceState?.getString("uploadParent")
         pendingAuthorization = savedInstanceState?.getString("authorizationAccount")
         pendingPhotosAuthorization = savedInstanceState?.getString("photosAuthorizationAccount")
+        pendingPhotosMode = runCatching {
+            PhotosFolderUploadMode.valueOf(savedInstanceState?.getString("photosUploadMode") ?: PhotosFolderUploadMode.RAW.name)
+        }.getOrDefault(PhotosFolderUploadMode.RAW)
         pendingUpload = savedInstanceState?.getString("uploadAccount")
-        savedInstanceState?.getStringArray("photosFile")?.let {
-            pendingPhotosFile = DriveFile(it[0], it[1], it[2], null)
+        savedInstanceState?.getStringArrayList("photosFiles")?.let { encoded ->
+            pendingPhotosFiles = encoded.chunked(3).mapNotNull { parts ->
+                if (parts.size == 3) DriveFile(parts[0], parts[1], parts[2], null) else null
+            }
         }
         photosAuthorizationResolution = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
             val expected = pendingPhotosAuthorization
             pendingPhotosAuthorization = null
             if (expected == null || expected != accountUi.active?.key) return@registerForActivityResult
             if (result.resultCode != RESULT_OK) {
-                pendingPhotosFile = null
+                pendingPhotosFiles = emptyList()
+                pendingPhotosMode = PhotosFolderUploadMode.RAW
                 Toast.makeText(this, "Đã hủy cấp quyền Google Photos.", Toast.LENGTH_SHORT).show()
             } else {
                 runCatching { authorization.getAuthorizationResultFromIntent(result.data) }
                     .onSuccess { auth ->
-                        auth.accessToken?.let { pendingPhotosFile?.let { file -> startPhotosUpload(file, it) } }
-                            ?: Toast.makeText(this, "Google không trả về quyền Photos.", Toast.LENGTH_LONG).show()
+                        auth.accessToken?.let { token ->
+                            pendingPhotosFiles.takeIf { files -> files.isNotEmpty() }?.let { files ->
+                                startPhotosUpload(files, token, pendingPhotosMode)
+                            }
+                        } ?: Toast.makeText(this, "Google không trả về quyền Photos.", Toast.LENGTH_LONG).show()
                     }
-                    .onFailure { Toast.makeText(this, "Không thể cấp quyền Google Photos.", Toast.LENGTH_LONG).show() }
+                    .onFailure {
+                        pendingPhotosFiles = emptyList()
+                        pendingPhotosMode = PhotosFolderUploadMode.RAW
+                        Toast.makeText(this, "Không thể cấp quyền Google Photos.", Toast.LENGTH_LONG).show()
+                    }
             }
         }
         resolution = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
@@ -359,13 +373,16 @@ class MainActivity : ComponentActivity() {
                     { pickUpload(false) }, ::createFolder, ::moveToTrash,
                     FileActionCallbacks(
                         uploadToPhotos = ::uploadToPhotos,
+                        uploadManyToPhotos = ::uploadToPhotos,
                         share = ::shareFile,
                         rename = ::renameFile,
                         loadPermissions = ::loadPermissions,
                         removePermission = ::removePermission,
                         loadFolders = ::loadMoveFolders,
                         move = ::moveFile,
-                        trash = ::moveToTrash
+                        moveMany = ::moveFiles,
+                        trash = ::moveToTrash,
+                        trashMany = ::moveToTrash
                     ),
                     accountUi.copy(busy = accountUi.busy || model.uploading), ::activate, ::removeAccount,
                     { servicePicker.launch(arrayOf("application/json", "text/json", "text/plain", "application/octet-stream")) },
@@ -388,7 +405,13 @@ class MainActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("authorizationAccount", pendingAuthorization)
         outState.putString("photosAuthorizationAccount", pendingPhotosAuthorization)
-        pendingPhotosFile?.let { outState.putStringArray("photosFile", arrayOf(it.id, it.name, it.mimeType)) }
+        outState.putString("photosUploadMode", pendingPhotosMode.name)
+        if (pendingPhotosFiles.isNotEmpty()) {
+            outState.putStringArrayList(
+                "photosFiles",
+                ArrayList(pendingPhotosFiles.flatMap { listOf(it.id, it.name, it.mimeType) })
+            )
+        }
         outState.putString("uploadAccount", pendingUpload)
         outState.putString("uploadParent", pendingUploadParent)
         super.onSaveInstanceState(outState)
@@ -450,6 +473,8 @@ class MainActivity : ComponentActivity() {
         pendingAuthorization = null
         pendingAuthorizationTarget = null
         pendingPhotosAuthorization = null
+        pendingPhotosFiles = emptyList()
+        pendingPhotosMode = PhotosFolderUploadMode.RAW
         pendingUpload = null
         browserTabModels.clear()
         browserRefreshIds.clear()
@@ -662,8 +687,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun uploadToPhotos(file: DriveFile) {
-        if (model.uploading || model.loading) return
+    private fun uploadToPhotos(file: DriveFile, mode: PhotosFolderUploadMode) = uploadToPhotos(listOf(file), mode)
+
+    private fun uploadToPhotos(files: List<DriveFile>, mode: PhotosFolderUploadMode) {
+        if (model.uploading || model.loading || files.isEmpty()) return
+        val eligible = files.distinctBy { it.id }.filter {
+            it.isFolder || it.mimeType.startsWith("image/") || it.mimeType.startsWith("video/")
+        }
+        if (eligible.isEmpty()) {
+            Toast.makeText(this, "Không có ảnh, video hoặc thư mục phù hợp để tải lên Google Photos.", Toast.LENGTH_LONG).show()
+            return
+        }
         val source = accountUi.active ?: return
         val destinations = accountUi.entries.filter { it.type == AccountType.GOOGLE }
         if (destinations.isEmpty()) {
@@ -671,7 +705,8 @@ class MainActivity : ComponentActivity() {
             return
         }
         fun authorizeDestination(destination: AccountEntry) {
-            pendingPhotosFile = file
+            pendingPhotosFiles = eligible
+            pendingPhotosMode = mode
             authorization.authorize(AuthorizationRequest.builder()
                 .setAccount(Account(destination.id, "com.google"))
                 .setRequestedScopes(listOf(Scope(PHOTOS_SCOPE))).build())
@@ -684,7 +719,7 @@ class MainActivity : ComponentActivity() {
                                 photosAuthorizationResolution.launch(IntentSenderRequest.Builder(it.intentSender).build())
                             } ?: error("Không thể mở cấp quyền Google Photos.")
                         }
-                        result.accessToken != null -> startPhotosUpload(file, result.accessToken!!)
+                        result.accessToken != null -> startPhotosUpload(eligible, result.accessToken!!, mode)
                         else -> error("Google không trả về quyền Photos.")
                     }
                 }.addOnFailureListener { error("Không thể cấp quyền Google Photos.") }
@@ -695,62 +730,70 @@ class MainActivity : ComponentActivity() {
             .setNegativeButton("Hủy", null).show()
     }
 
-    private fun startPhotosUpload(file: DriveFile, photosToken: String) {
-        if (model.uploading) return
+    private fun startPhotosUpload(files: List<DriveFile>, photosToken: String, mode: PhotosFolderUploadMode) {
+        if (model.uploading || files.isEmpty()) return
         ensureNotificationPermission()
         val source = accountUi.active ?: return
         val driveToken = model.token
         val s3 = s3Accounts.accounts.firstOrNull { it.id == source.id }?.config
-        pendingPhotosFile = null
+        pendingPhotosFiles = emptyList()
+        pendingPhotosMode = PhotosFolderUploadMode.RAW
         model = model.copy(uploading = true, message = null)
-        val total = if (file.isFolder) null else 1
+        val total = if (files.any { it.isFolder }) null else files.count {
+            it.mimeType.startsWith("image/") || it.mimeType.startsWith("video/")
+        }
         uploadNotifications.running(UploadNotifications.Kind.PHOTOS, completed = 0, failed = 0, total = total)
         lifecycleScope.launch {
             var uploaded = 0
             var failed = 0
             var cancelled = false
             var fatal: Throwable? = null
+            var albumsCreated = 0
             try {
                 withContext(Dispatchers.IO) {
-                    val album = if (file.isFolder) PhotosApi.createAlbum(photosToken, file.name) else null
-                    val queue = java.util.ArrayDeque<DriveFile>().apply { add(file) }
                     val visited = mutableSetOf<String>()
-                    while (queue.isNotEmpty()) {
-                        val item = queue.removeFirst()
-                        if (!visited.add(item.id)) continue
-                        if (item.isFolder) {
-                            val children = if (source.type == AccountType.S3) S3Api.list(requireNotNull(s3), item.id)
-                                else DriveApi.listFiles(requireNotNull(driveToken), parentId = item.id)
-                            queue.addAll(children)
-                            continue
+                    files.forEach { root ->
+                        val album = if (mode == PhotosFolderUploadMode.ALBUM && root.isFolder) {
+                            PhotosApi.createAlbum(photosToken, root.name).also { albumsCreated++ }
+                        } else null
+                        val queue = java.util.ArrayDeque<DriveFile>().apply { add(root) }
+                        while (queue.isNotEmpty()) {
+                            val item = queue.removeFirst()
+                            if (!visited.add(item.id)) continue
+                            if (item.isFolder) {
+                                val children = if (source.type == AccountType.S3) S3Api.list(requireNotNull(s3), item.id)
+                                    else DriveApi.listFiles(requireNotNull(driveToken), parentId = item.id)
+                                queue.addAll(children)
+                                continue
+                            }
+                            if (!item.mimeType.startsWith("image/") && !item.mimeType.startsWith("video/")) continue
+                            uploadNotifications.running(
+                                UploadNotifications.Kind.PHOTOS,
+                                currentName = item.name,
+                                completed = uploaded,
+                                failed = failed,
+                                total = total
+                            )
+                            val temporary = File.createTempFile("photos-upload-", ".tmp", cacheDir)
+                            try {
+                                if (source.type == AccountType.S3) S3Api.downloadTo(requireNotNull(s3), item.id, temporary)
+                                else DriveApi.downloadTo(requireNotNull(driveToken), item.id, temporary)
+                                PhotosApi.upload(photosToken, temporary, item.name, item.mimeType, album)
+                                uploaded++
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (_: Exception) {
+                                failed++
+                            } finally {
+                                temporary.delete()
+                            }
+                            uploadNotifications.running(
+                                UploadNotifications.Kind.PHOTOS,
+                                completed = uploaded,
+                                failed = failed,
+                                total = total
+                            )
                         }
-                        if (!item.mimeType.startsWith("image/") && !item.mimeType.startsWith("video/")) continue
-                        uploadNotifications.running(
-                            UploadNotifications.Kind.PHOTOS,
-                            currentName = item.name,
-                            completed = uploaded,
-                            failed = failed,
-                            total = total
-                        )
-                        val temporary = File.createTempFile("photos-upload-", ".tmp", cacheDir)
-                        try {
-                            if (source.type == AccountType.S3) S3Api.downloadTo(requireNotNull(s3), item.id, temporary)
-                            else DriveApi.downloadTo(requireNotNull(driveToken), item.id, temporary)
-                            PhotosApi.upload(photosToken, temporary, item.name, item.mimeType, album)
-                            uploaded++
-                        } catch (e: kotlinx.coroutines.CancellationException) {
-                            throw e
-                        } catch (_: Exception) {
-                            failed++
-                        } finally {
-                            temporary.delete()
-                        }
-                        uploadNotifications.running(
-                            UploadNotifications.Kind.PHOTOS,
-                            completed = uploaded,
-                            failed = failed,
-                            total = total
-                        )
                     }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -760,6 +803,7 @@ class MainActivity : ComponentActivity() {
                 fatal = e
             } finally {
                 model = model.copy(uploading = false)
+                val albumSuffix = if (albumsCreated > 0) ". Đã tạo $albumsCreated album." else "."
                 when {
                     cancelled -> uploadNotifications.finished(
                         UploadNotifications.Kind.PHOTOS,
@@ -774,8 +818,7 @@ class MainActivity : ComponentActivity() {
                     else -> uploadNotifications.finished(
                         UploadNotifications.Kind.PHOTOS,
                         "Đã tải $uploaded tệp lên Google Photos" +
-                            (if (failed > 0) ", lỗi $failed tệp" else "") +
-                            (if (file.isFolder) ". Album: ${file.name}." else "."),
+                            (if (failed > 0) ", lỗi $failed tệp" else "") + albumSuffix,
                         success = failed == 0
                     )
                 }
@@ -903,6 +946,8 @@ class MainActivity : ComponentActivity() {
         pendingAuthorization = null
         pendingAuthorizationTarget = null
         pendingPhotosAuthorization = null
+        pendingPhotosFiles = emptyList()
+        pendingPhotosMode = PhotosFolderUploadMode.RAW
         pendingUpload = null
         browserTabModels.clear()
         browserRefreshIds.clear()
@@ -1121,29 +1166,63 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun moveFile(file: DriveFile, destinationId: String, done: (Result<Unit>) -> Unit) {
+    private fun moveFile(file: DriveFile, destinationId: String, done: (Result<Unit>) -> Unit) =
+        moveFiles(listOf(file), destinationId, done)
+
+    private fun moveFiles(files: List<DriveFile>, destinationId: String, done: (Result<Unit>) -> Unit) {
         val token = model.token
         val accountKey = accountUi.active?.key
         if (token == null || accountKey == null) return done(Result.failure(IllegalStateException("Cần cấp quyền Drive trước.")))
+        val unique = files.distinctBy { it.id }
+        if (unique.isEmpty()) return done(Result.success(Unit))
         lifecycleScope.launch {
-            val result = runCatching { withContext(Dispatchers.IO) {
-                DriveApi.move(token, file, destinationId)
+            val result = withContext(Dispatchers.IO) {
+                var failed = 0
+                var firstFailure: Throwable? = null
+                unique.forEach { file ->
+                    runCatching { DriveApi.move(token, file, destinationId) }
+                        .onFailure { failure ->
+                            failed++
+                            if (firstFailure == null) firstFailure = failure
+                        }
+                }
                 listingCache.clear(accountKey)
-            } }
+                if (failed == 0) Result.success(Unit)
+                else Result.failure(IllegalStateException(
+                    "Không thể di chuyển $failed/${unique.size} mục.",
+                    firstFailure
+                ))
+            }
             done(result)
-            if (result.isSuccess && accountUi.active?.key == accountKey) refresh(forceNetwork = true)
+            if (accountUi.active?.key == accountKey) refresh(forceNetwork = true)
         }
     }
 
-    private fun moveToTrash(file: DriveFile) {
+    private fun moveToTrash(file: DriveFile) = moveToTrash(listOf(file))
+
+    private fun moveToTrash(files: List<DriveFile>) {
         if (model.loading || accountUi.active?.type !in setOf(AccountType.GOOGLE, AccountType.SERVICE)) return
         val token = model.token ?: return
+        val unique = files.distinctBy { it.id }
+        if (unique.isEmpty()) return
         val request = ++generation
         model = model.copy(loading = true, message = null)
         lifecycleScope.launch {
-            runCatching { withContext(Dispatchers.IO) { DriveApi.moveToTrash(token, file.id); accountUi.active?.key?.let { listingCache.clear(it) } } }
-                .onSuccess { if (request == generation) refresh(forceNetwork = true) }
-                .onFailure { if (request == generation) error("Không thể chuyển tệp vào thùng rác.") }
+            val failures = withContext(Dispatchers.IO) {
+                var failed = 0
+                unique.forEach { file ->
+                    if (runCatching { DriveApi.moveToTrash(token, file.id) }.isFailure) failed++
+                }
+                accountUi.active?.key?.let { listingCache.clear(it) }
+                failed
+            }
+            if (request == generation) {
+                if (failures > 0) {
+                    model = model.copy(loading = false, message = "Không thể chuyển $failures/${unique.size} mục vào thùng rác.")
+                } else {
+                    refresh(forceNetwork = true)
+                }
+            }
         }
     }
 
@@ -1177,6 +1256,8 @@ class MainActivity : ComponentActivity() {
         pendingAuthorization = null
         pendingAuthorizationTarget = null
         pendingPhotosAuthorization = null
+        pendingPhotosFiles = emptyList()
+        pendingPhotosMode = PhotosFolderUploadMode.RAW
         pendingUpload = null
         serviceTokens.clear()
         googleStore.clearActive()

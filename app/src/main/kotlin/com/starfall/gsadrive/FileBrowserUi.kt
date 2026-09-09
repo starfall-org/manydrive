@@ -1,5 +1,6 @@
 package com.starfall.gsadrive
 
+import androidx.activity.compose.BackHandler
 import com.starfall.gsadrive.ui.CopyableError
 
 import android.content.Context
@@ -323,6 +324,8 @@ internal fun FileBrowserPage(
     var grid by rememberSaveable(account.key) { mutableStateOf(false) }
     var sortMenu by remember { mutableStateOf(false) }
     var actionFile by remember { mutableStateOf<DriveFile?>(null) }
+    var selectedIds by remember(scopeKey) { mutableStateOf<List<String>>(emptyList()) }
+    var multiActionFiles by remember { mutableStateOf<List<DriveFile>?>(null) }
     val sort = runCatching { BrowserSort.valueOf(sortName) }.getOrDefault(defaultSort)
     val globalSearch = query.isNotBlank() && searchResults != null
     val visible = remember(model.files, searchResults, query, sort, ascending) {
@@ -336,6 +339,26 @@ internal fun FileBrowserPage(
         }
         if (ascending) sorted else sorted.reversed()
     }
+    val selectedSet = selectedIds.toSet()
+    val selectedFiles = visible.filter { it.id in selectedSet }
+    val selectionMode = selectedIds.isNotEmpty()
+
+    fun toggleSelection(file: DriveFile) {
+        selectedIds = if (file.id in selectedSet) selectedIds.filterNot { it == file.id }
+            else selectedIds + file.id
+    }
+    fun enterSelection(file: DriveFile) {
+        if (file.id !in selectedSet) selectedIds = selectedIds + file.id
+    }
+    fun showMenu(file: DriveFile) {
+        if (file.id in selectedSet) multiActionFiles = selectedFiles
+        else actionFile = file
+    }
+
+    BackHandler(enabled = selectionMode) {
+        multiActionFiles = null
+        selectedIds = emptyList()
+    }
 
     Column(Modifier.fillMaxSize().padding(padding)) {
         Surface(
@@ -344,67 +367,86 @@ internal fun FileBrowserPage(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    sort.label,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(start = 8.dp, end = 2.dp)
-                )
-                Box {
-                    val directionDescription = when (sort) {
-                        BrowserSort.NAME -> if (ascending) "A đến Z" else "Z đến A"
-                        BrowserSort.MODIFIED, BrowserSort.SHARED ->
-                            if (ascending) "Từ cũ đến mới" else "Từ mới đến cũ"
+                if (selectionMode) {
+                    IconButton(onClick = { selectedIds = emptyList() }) {
+                        Icon(Icons.Outlined.Close, "Bỏ chọn tất cả")
                     }
-                    IconButton(onClick = { sortMenu = true }) {
-                        Icon(
-                            if (ascending) Icons.Outlined.ArrowUpward else Icons.Outlined.ArrowDownward,
-                            "Sắp xếp: $directionDescription"
-                        )
+                    Text(
+                        "${selectedIds.size} đã chọn",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.weight(1f))
+                    IconButton(
+                        enabled = selectedSet.size < visible.size,
+                        onClick = { selectedIds = visible.map { it.id } }
+                    ) {
+                        Icon(Icons.Outlined.SelectAll, "Chọn tất cả")
                     }
-                    DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
-                        Text(
-                            "Sắp xếp theo",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-                        )
-                        BrowserSort.entries.filter { it != BrowserSort.SHARED || shared }.forEach { option ->
-                            DropdownMenuItem(
-                                text = { Text(option.label) },
-                                leadingIcon = {
-                                    if (sort == option) Icon(Icons.Outlined.Check, null)
-                                    else Spacer(Modifier.size(24.dp))
-                                },
-                                onClick = {
-                                    sortName = option.name
-                                    sortPreferences.edit().putString(sortPreferenceKey, option.name).apply()
-                                    sortMenu = false
-                                }
+                } else {
+                    Text(
+                        sort.label,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(start = 8.dp, end = 2.dp)
+                    )
+                    Box {
+                        val directionDescription = when (sort) {
+                            BrowserSort.NAME -> if (ascending) "A đến Z" else "Z đến A"
+                            BrowserSort.MODIFIED, BrowserSort.SHARED ->
+                                if (ascending) "Từ cũ đến mới" else "Từ mới đến cũ"
+                        }
+                        IconButton(onClick = { sortMenu = true }) {
+                            Icon(
+                                if (ascending) Icons.Outlined.ArrowUpward else Icons.Outlined.ArrowDownward,
+                                "Sắp xếp: $directionDescription"
                             )
                         }
-                        HorizontalDivider()
-                        val directionOptions = if (sort == BrowserSort.NAME) {
-                            listOf(false to "Z đến A", true to "A đến Z")
-                        } else {
-                            listOf(false to "Từ mới đến cũ", true to "Từ cũ đến mới")
-                        }
-                        directionOptions.forEach { (value, label) ->
-                            DropdownMenuItem(
-                                text = { Text(label) },
-                                leadingIcon = {
-                                    if (ascending == value) Icon(Icons.Outlined.Check, null)
-                                    else Spacer(Modifier.size(24.dp))
-                                },
-                                onClick = {
-                                    ascending = value
-                                    sortPreferences.edit().putBoolean(ascendingPreferenceKey, value).apply()
-                                    sortMenu = false
-                                }
+                        DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                            Text(
+                                "Sắp xếp theo",
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                             )
+                            BrowserSort.entries.filter { it != BrowserSort.SHARED || shared }.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option.label) },
+                                    leadingIcon = {
+                                        if (sort == option) Icon(Icons.Outlined.Check, null)
+                                        else Spacer(Modifier.size(24.dp))
+                                    },
+                                    onClick = {
+                                        sortName = option.name
+                                        sortPreferences.edit().putString(sortPreferenceKey, option.name).apply()
+                                        sortMenu = false
+                                    }
+                                )
+                            }
+                            HorizontalDivider()
+                            val directionOptions = if (sort == BrowserSort.NAME) {
+                                listOf(false to "Z đến A", true to "A đến Z")
+                            } else {
+                                listOf(false to "Từ mới đến cũ", true to "Từ cũ đến mới")
+                            }
+                            directionOptions.forEach { (value, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    leadingIcon = {
+                                        if (ascending == value) Icon(Icons.Outlined.Check, null)
+                                        else Spacer(Modifier.size(24.dp))
+                                    },
+                                    onClick = {
+                                        ascending = value
+                                        sortPreferences.edit().putBoolean(ascendingPreferenceKey, value).apply()
+                                        sortMenu = false
+                                    }
+                                )
+                            }
                         }
                     }
                 }
-                Spacer(Modifier.weight(1f))
+                if (!selectionMode) Spacer(Modifier.weight(1f))
                 Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                     Row {
                         IconButton(onClick = { grid = false }, colors = IconButtonDefaults.iconButtonColors(
@@ -455,7 +497,11 @@ internal fun FileBrowserPage(
                         accessToken = model.token,
                         onOpen = openFolder,
                         onPreview = { selected -> openFile(selected, visible.filter(::isSwipePreview)) },
-                        onMenu = { actionFile = it }
+                        selectionMode = selectionMode,
+                        selected = file.id in selectedSet,
+                        onToggleSelection = ::toggleSelection,
+                        onLongSelect = ::enterSelection,
+                        onMenu = ::showMenu
                     )
                 }
             }
@@ -475,7 +521,11 @@ internal fun FileBrowserPage(
                             shared = true,
                             onOpen = openFolder,
                             onPreview = { selected -> openFile(selected, visible.filter(::isSwipePreview)) },
-                            onMenu = { actionFile = it }
+                            selectionMode = selectionMode,
+                            selected = file.id in selectedSet,
+                            onToggleSelection = ::toggleSelection,
+                            onLongSelect = ::enterSelection,
+                            onMenu = ::showMenu
                         )
                     }
                 }
@@ -489,7 +539,11 @@ internal fun FileBrowserPage(
                         shared = false,
                         onOpen = openFolder,
                         onPreview = { selected -> openFile(selected, visible.filter(::isSwipePreview)) },
-                        onMenu = { actionFile = it }
+                        selectionMode = selectionMode,
+                        selected = file.id in selectedSet,
+                        onToggleSelection = ::toggleSelection,
+                        onLongSelect = ::enterSelection,
+                        onMenu = ::showMenu
                     )
                 }
             }
@@ -497,6 +551,18 @@ internal fun FileBrowserPage(
     }
     actionFile?.let { selected ->
         FileActionsSheet(file = selected, account = account, actions = actions, onDismiss = { actionFile = null })
+    }
+    multiActionFiles?.takeIf { it.isNotEmpty() }?.let { selected ->
+        MultiFileActionsSheet(
+            files = selected,
+            account = account,
+            actions = actions,
+            onDismiss = { multiActionFiles = null },
+            onActionDone = {
+                multiActionFiles = null
+                selectedIds = emptyList()
+            }
+        )
     }
 }
 
@@ -506,16 +572,36 @@ private fun FileListRow(
     shared: Boolean,
     onOpen: (DriveFile) -> Unit,
     onPreview: (DriveFile) -> Unit,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onToggleSelection: (DriveFile) -> Unit,
+    onLongSelect: (DriveFile) -> Unit,
     onMenu: (DriveFile) -> Unit
 ) {
-    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
         Row(
             Modifier.fillMaxWidth().combinedClickable(
-                onClick = { if (file.isFolder) onOpen(file) else onPreview(file) },
-                onLongClick = { onMenu(file) }
+                onClick = {
+                    if (selectionMode) onToggleSelection(file)
+                    else if (file.isFolder) onOpen(file) else onPreview(file)
+                },
+                onLongClick = { onLongSelect(file) }
             ).padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (selectionMode) {
+                Icon(
+                    if (selected) Icons.Outlined.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                    if (selected) "Đã chọn" else "Chưa chọn",
+                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(30.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+            }
             if (shared) {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -573,19 +659,35 @@ private fun FileGridCard(
     accessToken: String?,
     onOpen: (DriveFile) -> Unit,
     onPreview: (DriveFile) -> Unit,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onToggleSelection: (DriveFile) -> Unit,
+    onLongSelect: (DriveFile) -> Unit,
     onMenu: (DriveFile) -> Unit
 ) {
     val thumbnail = rememberFileThumbnail(file, accessToken)
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier.fillMaxWidth().combinedClickable(
-            onClick = { if (file.isFolder) onOpen(file) else onPreview(file) },
-            onLongClick = { onMenu(file) }
+            onClick = {
+                if (selectionMode) onToggleSelection(file)
+                else if (file.isFolder) onOpen(file) else onPreview(file)
+            },
+            onLongClick = { onLongSelect(file) }
         )
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (selectionMode) {
+                    Icon(
+                        if (selected) Icons.Outlined.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                        if (selected) "Đã chọn" else "Chưa chọn",
+                        tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
                 FileTypeIcon(file, Modifier.size(34.dp))
                 Spacer(Modifier.width(10.dp))
                 Text(
