@@ -202,6 +202,12 @@ private fun MainActions(
     if (actions.uploadToPhotos != null && (file.isFolder || file.mimeType.startsWith("image/") || file.mimeType.startsWith("video/"))) {
         ActionRow(Icons.Outlined.AddPhotoAlternate, "Tải lên Google Photos", onUploadPhotos)
     }
+    actions.download?.let { download ->
+        ActionRow(Icons.Outlined.Download, "Tải xuống") {
+            onDismiss()
+            download(file)
+        }
+    }
     ActionRow(Icons.Outlined.Info, "Xem thông tin", onInfo)
     if (driveActions && actions.trash != null) {
         ActionRow(Icons.Outlined.Delete, "Chuyển vào thùng rác") {

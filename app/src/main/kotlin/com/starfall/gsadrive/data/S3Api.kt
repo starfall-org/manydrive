@@ -1,6 +1,8 @@
 package com.starfall.gsadrive.data
 
 import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
+import aws.sdk.kotlin.services.s3.presigners.presignGetObject
+import kotlin.time.Duration.Companion.hours
 import aws.sdk.kotlin.services.s3.S3Client
 import aws.sdk.kotlin.services.s3.model.GetObjectRequest
 import aws.sdk.kotlin.services.s3.model.ListObjectsV2Request
@@ -50,6 +52,14 @@ object S3Api {
                 body = ByteStream.fromBytes(ByteArray(0))
             })
         }
+    }
+
+    internal suspend fun downloadSource(config: S3Config, key: String): DownloadSource = client(config).use { client ->
+        val request = client.presignGetObject(GetObjectRequest {
+            bucket = config.bucket
+            this.key = key
+        }, 24.hours)
+        DownloadSource(request.url.toString())
     }
 
     suspend fun downloadTo(config: S3Config, key: String, target: File) {

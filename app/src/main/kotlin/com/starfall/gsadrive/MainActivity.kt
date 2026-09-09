@@ -171,6 +171,43 @@ private class AndroidDocumentsMultiPicker : ActivityResultContract<Array<String>
 }
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        internal const val ACTION_OPEN_PLAYER = "com.starfall.gsadrive.action.OPEN_PLAYER"
+    }
+
+    private var pendingLegacyDownload: (() -> Unit)? = null
+    private val downloadPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val start = pendingLegacyDownload
+        pendingLegacyDownload = null
+        if (granted) start?.invoke()
+        else Toast.makeText(this, "Cần quyền lưu trữ để tải vào Downloads.", Toast.LENGTH_LONG).show()
+    }
+    private var pendingOpenPlayer = false
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handlePlayerIntent()
+    }
+
+    private fun handlePlayerIntent() {
+        if (intent?.action == ACTION_OPEN_PLAYER) {
+            pendingOpenPlayer = true
+            // Consume the request so a later recreation does not expand a minimized player again.
+            intent.action = null
+        }
+        openPendingPlayer()
+    }
+
+    private fun openPendingPlayer() {
+        if (!pendingOpenPlayer) return
+        val controller = playback ?: return
+        val item = controller.currentMediaItem ?: return
+        viewerCoordinator.syncToMediaItem(item)
+        viewerCoordinator.expand()
+        pendingOpenPlayer = false
+    }
+
     private data class BrowserRefreshTarget(
         val accountKey: String,
         val tab: Int,
@@ -191,7 +228,6 @@ class MainActivity : ComponentActivity() {
     private val serviceStore by lazy { ServiceAccountStore(this) }
     private val selection by lazy { getSharedPreferences("manydrive_selection", MODE_PRIVATE) }
     private val listingCache by lazy { FileListCache(File(cacheDir, "file-lists")) }
-    private val uploadNotifications by lazy { UploadNotifications(this) }
     private var themeMode by mutableStateOf(ThemeMode.SYSTEM)
     private var superDark by mutableStateOf(false)
     private var pendingUploadParent: String? = null
@@ -242,6 +278,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingOpenPlayer = savedInstanceState?.getBoolean("openPlayer") ?: false
+        handlePlayerIntent()
         enableEdgeToEdge()
         notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -264,6 +302,7 @@ class MainActivity : ComponentActivity() {
                         controller.addListener(playbackListener)
                         playback = controller
                         controller.currentMediaItem?.let(viewerCoordinator::syncToMediaItem)
+                        openPendingPlayer()
                     }
                     .onFailure {
                         Toast.makeText(this, "Không thể kết nối dịch vụ phát media.", Toast.LENGTH_LONG).show()
@@ -372,6 +411,7 @@ class MainActivity : ComponentActivity() {
                 App(model, tab, ::selectTab, { refresh(forceNetwork = true) }, ::signIn, ::authorize, ::connectS3, ::signOut,
                     { pickUpload(false) }, ::createFolder, ::moveToTrash,
                     FileActionCallbacks(
+                        download = ::downloadFile,
                         uploadToPhotos = ::uploadToPhotos,
                         uploadManyToPhotos = ::uploadToPhotos,
                         share = ::shareFile,
@@ -384,7 +424,7 @@ class MainActivity : ComponentActivity() {
                         trash = ::moveToTrash,
                         trashMany = ::moveToTrash
                     ),
-                    accountUi.copy(busy = accountUi.busy || model.uploading), ::activate, ::removeAccount,
+                    accountUi, ::activate, ::removeAccount,
                     { servicePicker.launch(arrayOf("application/json", "text/json", "text/plain", "application/octet-stream")) },
                     ::openFolder, ::goUp, ::searchDrive, ::openSearchFolder, { pickUpload(true) }, ::restoreFile,
                     themeMode, superDark,
@@ -403,6 +443,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("openPlayer", pendingOpenPlayer)
         outState.putString("authorizationAccount", pendingAuthorization)
         outState.putString("photosAuthorizationAccount", pendingPhotosAuthorization)
         outState.putString("photosUploadMode", pendingPhotosMode.name)
@@ -427,6 +468,7 @@ class MainActivity : ComponentActivity() {
     private val playbackListener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             mediaItem?.let(viewerCoordinator::syncToMediaItem)
+            openPendingPlayer()
         }
     }
 
@@ -467,7 +509,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun activate(entry: AccountEntry) {
-        if (model.uploading) return
         if (viewer != null) closePreview()
         ++generation
         pendingAuthorization = null
@@ -486,7 +527,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun selectTab(next: Int) {
-        if (model.uploading || !isTabEnabled(accountUi.active?.type, next) || tab == next) return
+        if (!isTabEnabled(accountUi.active?.type, next) || tab == next) return
 
         // Keep the complete state of the page we are leaving, including an in-progress refresh.
         // Switching tabs does not invalidate its request; completion is routed back to this tab.
@@ -525,19 +566,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openSearchFolder(file: DriveFile) {
-        if (!file.isFolder || model.loading || model.uploading || tab == 3) return
+        if (!file.isFolder || model.loading || tab == 3) return
         model = model.copy(path = listOf(file), files = emptyList(), fromCache = false)
         refresh()
     }
 
     private fun openFolder(file: DriveFile) {
-        if (!file.isFolder || model.loading || model.uploading || tab == 3) return
+        if (!file.isFolder || model.loading || tab == 3) return
         model = model.copy(path = model.path + file, files = emptyList())
         refresh()
     }
 
     private fun goUp() {
-        if (model.path.isEmpty() || model.uploading) return
+        if (model.path.isEmpty()) return
         model = model.copy(path = model.path.dropLast(1), files = emptyList())
         refresh()
     }
@@ -592,7 +633,6 @@ class MainActivity : ComponentActivity() {
 
     private fun refresh(forceNetwork: Boolean = false) {
         val active = accountUi.active ?: return
-        if (model.uploading) return
         val target = newBrowserRefreshTarget(active)
         val location = cacheLocation(target.tab, target.path)
         val startingToken = model.token
@@ -690,7 +730,7 @@ class MainActivity : ComponentActivity() {
     private fun uploadToPhotos(file: DriveFile, mode: PhotosFolderUploadMode) = uploadToPhotos(listOf(file), mode)
 
     private fun uploadToPhotos(files: List<DriveFile>, mode: PhotosFolderUploadMode) {
-        if (model.uploading || model.loading || files.isEmpty()) return
+        if (model.loading || files.isEmpty()) return
         val eligible = files.distinctBy { it.id }.filter {
             it.isFolder || it.mimeType.startsWith("image/") || it.mimeType.startsWith("video/")
         }
@@ -731,14 +771,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startPhotosUpload(files: List<DriveFile>, photosToken: String, mode: PhotosFolderUploadMode) {
-        if (model.uploading || files.isEmpty()) return
+        if (files.isEmpty()) return
         ensureNotificationPermission()
         val source = accountUi.active ?: return
         val driveToken = model.token
         val s3 = s3Accounts.accounts.firstOrNull { it.id == source.id }?.config
         pendingPhotosFiles = emptyList()
         pendingPhotosMode = PhotosFolderUploadMode.RAW
-        model = model.copy(uploading = true, message = null)
+        val uploadNotifications = UploadNotifications(this)
         val total = if (files.any { it.isFolder }) null else files.count {
             it.mimeType.startsWith("image/") || it.mimeType.startsWith("video/")
         }
@@ -802,7 +842,6 @@ class MainActivity : ComponentActivity() {
             } catch (e: Exception) {
                 fatal = e
             } finally {
-                model = model.copy(uploading = false)
                 val albumSuffix = if (albumsCreated > 0) ". Đã tạo $albumsCreated album." else "."
                 when {
                     cancelled -> uploadNotifications.finished(
@@ -984,18 +1023,54 @@ class MainActivity : ComponentActivity() {
         }.onFailure { accountError("Không thể xóa tài khoản đã lưu.") }
     }
 
+    private fun downloadFile(file: DriveFile) {
+        val account = accountUi.active ?: return
+        val token = model.token
+        val service = serviceAccounts.find { it.id == account.id }
+        val config = s3Accounts.accounts.find { it.id == account.id }?.config
+        val start: () -> Unit = {
+            Toast.makeText(this, "Đang thêm vào danh sách tải xuống…", Toast.LENGTH_SHORT).show()
+            lifecycleScope.launch {
+                val result = runCatching {
+                    withContext(Dispatchers.IO) {
+                        val access = if (account.type == AccountType.SERVICE)
+                            ServiceAccountApi.accessToken(requireNotNull(service)).value else token
+                        com.starfall.gsadrive.data.DocumentDownloads(
+                            this@MainActivity,
+                            list = { folder ->
+                                if (account.type == AccountType.S3) S3Api.list(requireNotNull(config), folder.id)
+                                else DriveApi.listFiles(requireNotNull(access), parentId = folder.id)
+                            },
+                            source = { item ->
+                                if (account.type == AccountType.S3) S3Api.downloadSource(requireNotNull(config), item.id)
+                                else com.starfall.gsadrive.data.DownloadSource(
+                                    "https://www.googleapis.com/drive/v3/files/${Uri.encode(item.id)}?alt=media&supportsAllDrives=true",
+                                    mapOf("Authorization" to "Bearer ${requireNotNull(access)}")
+                                )
+                            }
+                        ).download(file)
+                    }
+                }
+                result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+                Toast.makeText(this@MainActivity,
+                    if (result.isSuccess) "Đã giao ${result.getOrNull()} tệp cho trình tải xuống Android."
+                    else "Không thể thêm hết tệp vào danh sách tải. Các tệp đã thêm vẫn tiếp tục tải trên Android.",
+                    Toast.LENGTH_LONG).show()
+            }
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            if (pendingLegacyDownload == null) {
+                pendingLegacyDownload = start
+                downloadPermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+        } else start()
+    }
+
     private fun pickUpload(folder: Boolean) {
         val account = accountUi.active
         if (account == null) {
             Toast.makeText(this, "Hãy thêm hoặc chọn một tài khoản trước khi tải lên.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (model.uploading) {
-            Toast.makeText(this, "Đang có một tác vụ tải lên.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (model.loading) {
-            Toast.makeText(this, "Danh sách đang cập nhật. Hãy thử lại ngay sau đó.", Toast.LENGTH_SHORT).show()
             return
         }
         pendingUpload = account.key
@@ -1004,13 +1079,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun upload(uris: List<Uri>, tree: Uri? = null, parent: String? = null) {
-        if ((uris.isEmpty() && tree == null) || model.uploading) return
+        if (uris.isEmpty() && tree == null) return
         ensureNotificationPermission()
         val account = accountUi.active ?: return
         val s3 = s3Accounts.accounts.find { it.id == account.id }?.config
         val service = serviceAccounts.find { it.id == account.id }
         val existingToken = model.token
-        model = model.copy(uploading = true, message = null)
+        val uploadTab = tab
+        val uploadPath = model.path.toList()
+        val uploadNotifications = UploadNotifications(this)
         val total = if (tree == null) uris.size else null
         uploadNotifications.running(UploadNotifications.Kind.DRIVE, completed = 0, total = total)
         lifecycleScope.launch {
@@ -1065,8 +1142,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
             result.exceptionOrNull()?.let { if (it is CancellationException) cancelled = true }
-            withContext(Dispatchers.IO) { listingCache.clear(account.key) }
-            model = model.copy(uploading = false, fromCache = false)
             when {
                 cancelled -> uploadNotifications.finished(
                     UploadNotifications.Kind.DRIVE,
@@ -1084,8 +1159,14 @@ class MainActivity : ComponentActivity() {
                     success = false
                 )
             }
+            withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { listingCache.clear(account.key) }
             if (cancelled) throw result.exceptionOrNull() as CancellationException
-            refresh(forceNetwork = true)
+            // Completion must not refresh another account or interrupt navigation/mutations.
+            if (accountUi.active?.key == account.key) {
+                if (tab == uploadTab && model.path == uploadPath && !model.loading) {
+                    refresh(forceNetwork = true)
+                }
+            }
         }
     }
 
@@ -1249,7 +1330,6 @@ class MainActivity : ComponentActivity() {
     private fun savePreviewText() = viewerCoordinator.saveText()
 
     private fun signOut() {
-        if (model.uploading) return
         if (viewer != null) closePreview()
         accountUi.active?.key?.let { key -> lifecycleScope.launch(Dispatchers.IO) { listingCache.clear(key) } }
         ++generation

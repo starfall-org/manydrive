@@ -160,6 +160,8 @@ internal fun App(
         }
     }
     LaunchedEffect(tabPagerState, active?.type, selected) {
+        // Sidebar destinations are outside the pager; its retained page must not replace them.
+        if (selected !in tabs.indices) return@LaunchedEffect
         snapshotFlow { tabPagerState.settledPage }
             .distinctUntilChanged()
             .collect { page ->
@@ -167,7 +169,7 @@ internal fun App(
             }
     }
     fun requestBrowserTab(index: Int) {
-        if (model.uploading || index !in tabs.indices || !isTabEnabled(active?.type, index)) return
+        if (index !in tabs.indices || !isTabEnabled(active?.type, index)) return
         showSettings = false
         if (selected in tabs.indices) {
             drawerScope.launch { tabPagerState.animateScrollToPage(index) }
@@ -431,7 +433,7 @@ internal fun App(
                         else -> HorizontalPager(
                             state = tabPagerState,
                             modifier = Modifier.fillMaxSize().padding(padding),
-                            userScrollEnabled = !appViewerExpanded && !showSettings && !model.uploading && !accounts.busy &&
+                            userScrollEnabled = !appViewerExpanded && !showSettings && !accounts.busy &&
                                 !showFabMenu && !showAccounts && !showTypes && !addingS3 && !showCreateFolderDialog &&
                                 isTabEnabled(active.type, 1),
                             beyondViewportPageCount = 1,

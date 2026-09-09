@@ -363,7 +363,10 @@ class MediaPlaybackService : MediaSessionService() {
             }
         }
 
-        val launchIntent = Intent(this, MainActivity::class.java)
+        val launchIntent = Intent(this, MainActivity::class.java).apply {
+            action = MainActivity.ACTION_OPEN_PLAYER
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
         val sessionActivity = PendingIntent.getActivity(
             this,
             0,

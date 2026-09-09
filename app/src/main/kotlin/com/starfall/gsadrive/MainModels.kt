@@ -8,7 +8,7 @@ internal data class Model(
     val files: List<DriveFile> = emptyList(),
     val loading: Boolean = false, val message: String? = null,
     val path: List<DriveFile> = emptyList(),
-    val fromCache: Boolean = false, val uploading: Boolean = false
+    val fromCache: Boolean = false
 )
 internal data class ViewerState(
     val file: DriveFile,
@@ -85,6 +85,7 @@ internal data class Tab(val label: String, val icon: ImageVector)
 internal enum class PhotosFolderUploadMode { RAW, ALBUM }
 
 internal data class FileActionCallbacks(
+    val download: ((DriveFile) -> Unit)? = null,
     val uploadToPhotos: ((DriveFile, PhotosFolderUploadMode) -> Unit)? = null,
     val uploadManyToPhotos: ((List<DriveFile>, PhotosFolderUploadMode) -> Unit)? = null,
     val share: (DriveFile, String, String, (Result<Unit>) -> Unit) -> Unit = { _, _, _, done -> done(Result.failure(UnsupportedOperationException())) },

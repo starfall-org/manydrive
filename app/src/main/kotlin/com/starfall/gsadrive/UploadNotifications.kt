@@ -13,6 +13,8 @@ internal class UploadNotifications(context: Context) {
         PHOTOS(3102, "Đang tải lên Google Photos")
     }
 
+    // Each batch owns its notification, including concurrent batches of the same kind.
+    private val batchTag = java.util.UUID.randomUUID().toString()
     private val appContext = context.applicationContext
     private val manager = appContext.getSystemService(NotificationManager::class.java)
 
@@ -57,12 +59,12 @@ internal class UploadNotifications(context: Context) {
         } else {
             builder.setProgress(0, 0, true)
         }
-        runCatching { manager.notify(kind.id, builder.build()) }
+        runCatching { manager.notify(batchTag, kind.id, builder.build()) }
     }
 
     fun finished(kind: Kind, message: String, success: Boolean = true) {
         runCatching { manager.notify(
-            kind.id,
+            batchTag, kind.id,
             base(kind)
                 .setContentTitle(if (success) "Tải lên hoàn tất" else "Tải lên chưa hoàn tất")
                 .setContentText(message)
@@ -76,7 +78,7 @@ internal class UploadNotifications(context: Context) {
     }
 
     fun cancel(kind: Kind) {
-        runCatching { manager.cancel(kind.id) }
+        runCatching { manager.cancel(batchTag, kind.id) }
     }
 
     private fun base(kind: Kind): NotificationCompat.Builder =
