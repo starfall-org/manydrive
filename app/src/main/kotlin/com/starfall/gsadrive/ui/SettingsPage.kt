@@ -1,5 +1,7 @@
 package com.starfall.gsadrive.ui
 
+import com.starfall.gsadrive.tr
+
 import android.content.Intent
 import android.provider.Settings
 import androidx.compose.foundation.clickable
@@ -54,9 +56,9 @@ fun SettingsPage(
     ) {
         Spacer(Modifier.height(20.dp))
 
-        SettingsSectionTitle("Thông báo")
+        SettingsSectionTitle(tr("Thông báo"))
         SettingsRow(
-            title = "Cài đặt thông báo",
+            title = tr("Cài đặt thông báo"),
             onClick = {
                 val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                     .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
@@ -64,27 +66,27 @@ fun SettingsPage(
             }
         )
 
-        SettingsSectionTitle("Giao diện")
+        SettingsSectionTitle(tr("Giao diện"))
         SettingsRow(
-            title = "Chọn giao diện",
+            title = tr("Chọn giao diện"),
             subtitle = when (mode) {
-                ThemeMode.SYSTEM -> "Chế độ mặc định của hệ thống"
-                ThemeMode.LIGHT -> "Sáng"
-                ThemeMode.DARK -> "Tối"
+                ThemeMode.SYSTEM -> tr("Chế độ mặc định của hệ thống")
+                ThemeMode.LIGHT -> tr("Sáng")
+                ThemeMode.DARK -> tr("Tối")
             },
             onClick = { showThemeDialog = true }
         )
         SettingsSwitchRow(
             title = "Super Dark Mode",
-            subtitle = "Dùng nền đen thuần khi giao diện tối đang bật",
+            subtitle = tr("Dùng nền đen thuần khi giao diện tối đang bật"),
             checked = superDark,
             onCheckedChange = setSuperDark
         )
 
-        SettingsSectionTitle("Bộ nhớ đệm của tài liệu")
+        SettingsSectionTitle(tr("Bộ nhớ đệm của tài liệu"))
         SettingsRow(
-            title = "Xóa bộ nhớ đệm",
-            subtitle = "Xóa danh sách tệp và dữ liệu đã lưu trong bộ nhớ đệm",
+            title = tr("Xóa bộ nhớ đệm"),
+            subtitle = tr("Xóa danh sách tệp và dữ liệu đã lưu trong bộ nhớ đệm"),
             onClick = clearCache
         )
 
@@ -94,7 +96,7 @@ fun SettingsPage(
     if (showThemeDialog) {
         AlertDialog(
             onDismissRequest = { showThemeDialog = false },
-            title = { Text("Chọn giao diện") },
+            title = { Text(tr("Chọn giao diện")) },
             text = {
                 Column {
                     ThemeMode.entries.forEach { option ->
@@ -111,9 +113,9 @@ fun SettingsPage(
                             RadioButton(selected = mode == option, onClick = null)
                             Text(
                                 when (option) {
-                                    ThemeMode.SYSTEM -> "Mặc định hệ thống"
-                                    ThemeMode.LIGHT -> "Sáng"
-                                    ThemeMode.DARK -> "Tối"
+                                    ThemeMode.SYSTEM -> tr("Mặc định hệ thống")
+                                    ThemeMode.LIGHT -> tr("Sáng")
+                                    ThemeMode.DARK -> tr("Tối")
                                 },
                                 modifier = Modifier.padding(start = 12.dp)
                             )
@@ -122,7 +124,7 @@ fun SettingsPage(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showThemeDialog = false }) { Text("Hủy") }
+                TextButton(onClick = { showThemeDialog = false }) { Text(tr("Hủy")) }
             }
         )
     }

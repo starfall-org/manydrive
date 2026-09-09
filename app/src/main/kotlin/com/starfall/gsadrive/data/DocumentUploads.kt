@@ -1,5 +1,7 @@
 package com.starfall.gsadrive.data
 
+import com.starfall.gsadrive.tr
+
 import android.content.ContentResolver
 import android.net.Uri
 import android.provider.DocumentsContract
@@ -17,9 +19,9 @@ class DocumentUploads(
         uris.forEach { uri ->
             currentCoroutineContext().ensureActive()
             val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
-                check(it.moveToFirst()) { "Không đọc được tên tệp." }
+                check(it.moveToFirst()) { tr("Không đọc được tên tệp.") }
                 it.getString(0)
-            } ?: error("Không đọc được tệp đã chọn.")
+            } ?: error(tr("Không đọc được tệp đã chọn."))
             uploadFile(uri, name, resolver.getType(uri) ?: "application/octet-stream", parent)
         }
     }
@@ -28,11 +30,11 @@ class DocumentUploads(
         val visited = mutableSetOf<String>()
         suspend fun walk(id: String, destination: String?, depth: Int) {
             currentCoroutineContext().ensureActive()
-            check(depth < 128 && visited.add(id)) { "Cấu trúc thư mục quá sâu hoặc bị lặp." }
+            check(depth < 128 && visited.add(id)) { tr("Cấu trúc thư mục quá sâu hoặc bị lặp.") }
             val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
             val name = resolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use {
-                check(it.moveToFirst()) { "Không đọc được thư mục." }; it.getString(0)
-            } ?: error("Không đọc được thư mục đã chọn.")
+                check(it.moveToFirst()) { tr("Không đọc được thư mục.") }; it.getString(0)
+            } ?: error(tr("Không đọc được thư mục đã chọn."))
             val target = createFolder(name, destination)
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, id)
             val projection = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -46,7 +48,7 @@ class DocumentUploads(
                     if (mime == DocumentsContract.Document.MIME_TYPE_DIR) walk(child, target, depth + 1)
                     else uploadFile(DocumentsContract.buildDocumentUriUsingTree(tree, child), childName, mime, target)
                 }
-            } ?: error("Không đọc được nội dung thư mục $name.")
+            } ?: error(tr("Không đọc được nội dung thư mục $name."))
         }
         walk(DocumentsContract.getTreeDocumentId(tree), parent, 0)
     }

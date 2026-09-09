@@ -1,5 +1,7 @@
 package com.starfall.gsadrive.ui
 
+import com.starfall.gsadrive.tr
+
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import androidx.activity.compose.BackHandler
@@ -272,7 +274,7 @@ internal fun ExpandableMediaPlayer(
                     IconButton(onClick = onMinimize) {
                         Icon(
                             Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = "Thu nhỏ trình phát",
+                            contentDescription = tr("Thu nhỏ trình phát"),
                             tint = Color.White
                         )
                     }

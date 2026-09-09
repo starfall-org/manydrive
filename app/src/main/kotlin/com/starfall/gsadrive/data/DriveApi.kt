@@ -1,5 +1,7 @@
 package com.starfall.gsadrive.data
 
+import com.starfall.gsadrive.tr
+
 import com.google.api.client.http.ByteArrayContent
 import com.google.api.client.http.InputStreamContent
 import com.google.api.services.drive.Drive
@@ -22,7 +24,10 @@ data class DriveFile(
     val sharedWithMeTime: String? = null
 ) {
     val isFolder get() = mimeType == "application/vnd.google-apps.folder"
-    val description get() = if (isFolder) "Thư mục" else "Đã sửa đổi ${modifiedTime?.replace("T", " ")?.substringBefore(".") ?: "gần đây"}"
+    val description get() = if (isFolder) tr("Thư mục") else {
+        val time = modifiedTime?.replace("T", " ")?.substringBefore(".") ?: tr("gần đây")
+        tr("Đã sửa đổi $time")
+    }
 }
 
 data class DriveUserProfile(val displayName: String?, val photoLink: String?)
@@ -162,7 +167,7 @@ object DriveApi {
     private fun escapeQuery(value: String) = value.replace("\\", "\\\\").replace("'", "\\'")
 
     private fun GoogleFile.toDriveFile() = DriveFile(
-        id = id, name = name ?: "Không tên", mimeType = mimeType.orEmpty(),
+        id = id, name = name ?: tr("Không tên"), mimeType = mimeType.orEmpty(),
         modifiedTime = modifiedTime?.toStringRfc3339(), size = getSize(),
         thumbnailUrl = thumbnailLink, webViewUrl = webViewLink, parents = parents.orEmpty(),
         trashed = trashed == true, sharedWithMeTime = sharedWithMeTime?.toStringRfc3339()

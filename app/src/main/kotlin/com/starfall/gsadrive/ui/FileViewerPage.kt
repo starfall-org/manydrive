@@ -1,5 +1,7 @@
 package com.starfall.gsadrive.ui
 
+import com.starfall.gsadrive.tr
+
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.Settings
@@ -247,13 +249,13 @@ private fun ViewerContent(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 CopyableError(error)
-                FilledTonalButton(onClick = onBack) { Text("Đóng") }
+                FilledTonalButton(onClick = onBack) { Text(tr("Đóng")) }
             }
             text != null -> TextDocumentViewer(file.id, text, saving, onTextChange, onSaveText)
             localPath != null && file.mimeType.startsWith("image/") -> ImageViewer(localPath)
             localPath != null && (file.mimeType.startsWith("video/") || file.mimeType.startsWith("audio/")) ->
                 MediaViewer(player, alwaysShowControls = file.mimeType.startsWith("audio/"))
-            else -> Text("Không thể xem loại tệp này.", Modifier.align(Alignment.Center))
+            else -> Text(tr("Không thể xem loại tệp này."), Modifier.align(Alignment.Center))
         }
     }
 }
@@ -312,7 +314,7 @@ private fun TextDocumentViewer(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 enabled = !saving,
                 textStyle = MaterialTheme.typography.bodyMedium,
-                label = { Text("Nội dung") }
+                label = { Text(tr("Nội dung")) }
             )
             Row(
                 modifier = Modifier.align(Alignment.End),
@@ -324,14 +326,14 @@ private fun TextDocumentViewer(
                         onTextChange(originalText)
                         editing = false
                     }
-                ) { Text("Hủy") }
+                ) { Text(tr("Hủy")) }
                 FilledTonalButton(
                     enabled = !saving,
                     onClick = {
                         onSave()
                         editing = false
                     }
-                ) { Text(if (saving) "Đang lưu…" else "Lưu thay đổi") }
+                ) { Text(if (saving) tr("Đang lưu…") else tr("Lưu thay đổi")) }
             }
         }
     } else {
@@ -351,11 +353,11 @@ private fun TextDocumentViewer(
             }
             Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
                 IconButton(enabled = !saving, onClick = { menuOpen = true }) {
-                    Icon(Icons.Outlined.MoreVert, "Tùy chọn")
+                    Icon(Icons.Outlined.MoreVert, tr("Tùy chọn"))
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(
-                        text = { Text("Sửa") },
+                        text = { Text(tr("Sửa")) },
                         leadingIcon = { Icon(Icons.Outlined.Edit, null) },
                         enabled = !saving,
                         onClick = {
@@ -526,7 +528,7 @@ internal fun MediaViewer(
                         val target = (player.currentPosition + if (backward) -10_000L else 10_000L)
                             .coerceAtLeast(0L)
                         player.seekTo(if (player.duration > 0) target.coerceAtMost(player.duration) else target)
-                        feedback = if (backward) "−10 giây" else "+10 giây"
+                        feedback = if (backward) tr("−10 giây") else tr("+10 giây")
                         feedbackVersion++
                     }
                 })
@@ -563,7 +565,7 @@ internal fun MediaViewer(
                 CompositionLocalProvider(LocalContentColor provides miniContentColor) {
                     PlayPauseButton(player)
                     IconButton(onClick = onClose) {
-                        Icon(Icons.Outlined.Close, "Đóng trình phát", tint = miniContentColor)
+                        Icon(Icons.Outlined.Close, tr("Đóng trình phát"), tint = miniContentColor)
                     }
                 }
             }
@@ -588,7 +590,7 @@ internal fun MediaViewer(
                 valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
                 enabled = fullControlsInteractive && seekable && duration > 0,
                 modifier = Modifier.fillMaxWidth().height(20.dp)
-                    .semantics { contentDescription = "Tiến độ phát" },
+                    .semantics { contentDescription = tr("Tiến độ phát") },
                 thumb = {
                     // Use a centered vertical tick rather than a dot so it reads as the playhead.
                     Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
@@ -628,7 +630,7 @@ internal fun MediaViewer(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box {
                     IconButton(enabled = fullControlsInteractive, onClick = { settingsOpen = true; interactionVersion++ }) {
-                        Icon(Icons.Outlined.Settings, "Cài đặt phát", tint = Color.White)
+                        Icon(Icons.Outlined.Settings, tr("Cài đặt phát"), tint = Color.White)
                     }
                     DropdownMenu(
                         expanded = settingsOpen,
@@ -637,7 +639,7 @@ internal fun MediaViewer(
                         tonalElevation = 0.dp
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Tự động chuyển bài", color = Color.White) },
+                            text = { Text(tr("Tự động chuyển bài"), color = Color.White) },
                             trailingIcon = {
                                 Switch(
                                     checked = slideshowEnabled,
@@ -660,7 +662,7 @@ internal fun MediaViewer(
                 Spacer(Modifier.weight(1f))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                     IconButton(enabled = fullControlsInteractive && seekable, onClick = { player.seekBack(); interactionVersion++ }) {
-                        Icon(Icons.Outlined.Replay10, "Lùi 10 giây", tint = Color.White)
+                        Icon(Icons.Outlined.Replay10, tr("Lùi 10 giây"), tint = Color.White)
                     }
                     CompositionLocalProvider(LocalContentColor provides Color.White) {
                         IconButton(enabled = fullControlsInteractive, onClick = {
@@ -672,19 +674,19 @@ internal fun MediaViewer(
                             interactionVersion++
                         }, modifier = Modifier.size(56.dp), interactionSource = controlsInteraction) {
                             Icon(if (playRequested && player.playbackState != Player.STATE_ENDED) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                                if (playRequested && player.playbackState != Player.STATE_ENDED) "Tạm dừng" else "Phát",
+                                if (playRequested && player.playbackState != Player.STATE_ENDED) tr("Tạm dừng") else tr("Phát"),
                                 modifier = Modifier.size(40.dp))
                         }
                     }
                     IconButton(enabled = fullControlsInteractive && seekable, onClick = { player.seekForward(); interactionVersion++ }) {
-                        Icon(Icons.Outlined.Forward10, "Tiến 10 giây", tint = Color.White)
+                        Icon(Icons.Outlined.Forward10, tr("Tiến 10 giây"), tint = Color.White)
                     }
                 }
                 Spacer(Modifier.weight(1f))
                 IconButton(enabled = fullControlsInteractive, onClick = { onToggleFullscreen(); interactionVersion++ }) {
                     Icon(
                         if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
-                        if (fullscreen) "Thoát toàn màn hình" else "Toàn màn hình",
+                        if (fullscreen) tr("Thoát toàn màn hình") else tr("Toàn màn hình"),
                         tint = Color.White
                     )
                 }

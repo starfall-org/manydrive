@@ -1,5 +1,7 @@
 package com.starfall.gsadrive.data
 
+import com.starfall.gsadrive.tr
+
 import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
 import aws.sdk.kotlin.services.s3.presigners.presignGetObject
 import kotlin.time.Duration.Companion.hours
@@ -69,7 +71,7 @@ object S3Api {
                 bucket = config.bucket
                 this.key = key
             }) { response ->
-                requireNotNull(response.body) { "S3 không trả về nội dung tệp." }.writeToFile(target)
+                requireNotNull(response.body) { tr("S3 không trả về nội dung tệp.") }.writeToFile(target)
             }
         }
     }

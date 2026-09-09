@@ -1,5 +1,7 @@
 package com.starfall.gsadrive.data
 
+import com.starfall.gsadrive.tr
+
 import org.json.JSONObject
 
 /** Uploads media using the append-only Google Photos Library scope. */
@@ -18,7 +20,7 @@ object PhotosApi {
         request.headers.set("X-Goog-Upload-Content-Type", mimeType)
         val response = request.execute()
         val uploadToken = try { response.parseAsString().trim() } finally { response.disconnect() }
-        require(uploadToken.isNotEmpty()) { "Google Photos không trả về upload token." }
+        require(uploadToken.isNotEmpty()) { tr("Google Photos không trả về upload token.") }
         val body = JSONObject().put("newMediaItems", org.json.JSONArray().put(
             JSONObject().put("simpleMediaItem", JSONObject().put("uploadToken", uploadToken).put("fileName", filename))))
         albumId?.let { body.put("albumId", it) }
@@ -26,7 +28,7 @@ object PhotosApi {
             "https://photoslibrary.googleapis.com/v1/mediaItems:batchCreate", body.toString().toByteArray()).decodeToString())
             .getJSONArray("newMediaItemResults").getJSONObject(0)
         check(result.optJSONObject("status")?.optInt("code", 0) in listOf(null, 0) && result.has("mediaItem")) {
-            result.optJSONObject("status")?.optString("message") ?: "Không thể tạo mục Google Photos."
+            result.optJSONObject("status")?.optString("message") ?: tr("Không thể tạo mục Google Photos.")
         }
     }
 }

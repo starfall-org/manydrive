@@ -1,5 +1,7 @@
 package com.starfall.gsadrive.data
 
+import com.starfall.gsadrive.tr
+
 import android.app.DownloadManager
 import android.content.Context
 import android.net.Uri
@@ -22,9 +24,9 @@ internal class DocumentDownloads(
         var queued = 0
         suspend fun walk(item: DriveFile, path: String, depth: Int) {
             currentCoroutineContext().ensureActive()
-            check(depth < 128) { "Thư mục quá sâu." }
+            check(depth < 128) { tr("Thư mục quá sâu.") }
             if (item.isFolder) {
-                check(ancestors.add(item.id)) { "Cấu trúc thư mục bị lặp." }
+                check(ancestors.add(item.id)) { tr("Cấu trúc thư mục bị lặp.") }
                 val names = mutableSetOf<String>()
                 list(item).forEach { child ->
                     walk(child, "$path/${uniqueName(child.name, names)}", depth + 1)
