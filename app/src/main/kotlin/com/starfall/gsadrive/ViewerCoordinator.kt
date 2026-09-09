@@ -108,9 +108,16 @@ internal class ViewerCoordinator(
             return
         }
 
-        player()?.stop()
-        player()?.clearMediaItems()
-        PlaybackSourceRegistry.clear()
+        if (file.mimeType.startsWith("image/") && browsingQueue.any { queued ->
+                PlaybackSourceRegistry.all().any { it.file.id == queued.id }
+            }) {
+            // Images share the same pager. Keep its media pages and session queue alive, paused.
+            player()?.pause()
+        } else {
+            player()?.stop()
+            player()?.clearMediaItems()
+            PlaybackSourceRegistry.clear()
+        }
         state = ViewerState(
             file = file,
             loading = true,
@@ -228,7 +235,7 @@ internal class ViewerCoordinator(
 
     fun swipeTo(index: Int) {
         val current = state ?: return
-        if (current.saving || current.loading) return
+        if (current.saving) return
         val queue = current.swipeQueue
         val target = queue.getOrNull(index) ?: return
         if (target.id == current.file.id) return
@@ -338,7 +345,7 @@ internal class ViewerCoordinator(
 
     /**
      * Materialize only the next media item into the shared viewer cache ahead of playback.
-     * The adjacent ExoPlayer remains unprepared/frozen; this only downloads bytes on Dispatchers.IO.
+     * Page players share the same per-item download lock and cache with this IO prefetch.
      * Requests are serialized so fast swipes never start a fan-out of background downloads.
      */
     private fun prefetchNextMedia(currentMediaId: String) {

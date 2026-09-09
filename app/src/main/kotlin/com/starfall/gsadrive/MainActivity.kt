@@ -1,6 +1,8 @@
 package com.starfall.gsadrive
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
 import android.accounts.Account
 import android.accounts.AccountManager
 import android.content.Intent
@@ -26,6 +28,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -138,6 +141,35 @@ import kotlinx.coroutines.withContext
 private const val DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 private const val PHOTOS_SCOPE = "https://www.googleapis.com/auth/photoslibrary.appendonly"
 
+
+private class AndroidDocumentsMultiPicker : ActivityResultContract<Array<String>, List<Uri>>() {
+    override fun createIntent(context: Context, input: Array<String>): Intent {
+        val mimeTypes = input.filter { it.isNotBlank() }.ifEmpty { listOf("*/*") }
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = if (mimeTypes.size == 1) mimeTypes.first() else "*/*"
+            if (mimeTypes.size > 1) putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes.toTypedArray())
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        val androidPicker = ComponentName("com.android.documentsui", "com.android.documentsui.picker.PickActivity")
+        val available = runCatching {
+            context.packageManager.getActivityInfo(androidPicker, 0)
+        }.isSuccess
+        if (available) intent.component = androidPicker
+        return intent
+    }
+
+    override fun parseResult(resultCode: Int, intent: Intent?): List<Uri> {
+        if (resultCode != Activity.RESULT_OK || intent == null) return emptyList()
+        val result = LinkedHashSet<Uri>()
+        intent.clipData?.let { clip ->
+            for (index in 0 until clip.itemCount) result += clip.getItemAt(index).uri
+        }
+        intent.data?.let(result::add)
+        return result.toList()
+    }
+}
+
 class MainActivity : ComponentActivity() {
     private data class BrowserRefreshTarget(
         val accountKey: String,
@@ -215,6 +247,14 @@ class MainActivity : ComponentActivity() {
                 Toast.makeText(this, "Không có quyền thông báo: trình phát vẫn chạy nền nhưng điều khiển media có thể không hiện trên thanh thông báo.", Toast.LENGTH_LONG).show()
             }
         }
+        // Notifications are the only runtime permission this app needs. Ask automatically only
+        // on the first eligible launch; feature entry points ask again when the permission is needed.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !selection.getBoolean("notificationPermissionOnboardingAsked", false)
+        ) {
+            selection.edit().putBoolean("notificationPermissionOnboardingAsked", true).apply()
+            ensureNotificationPermission()
+        }
         val sessionToken = SessionToken(this, ComponentName(this, MediaPlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, sessionToken).buildAsync().also { future ->
             future.addListener({
@@ -277,7 +317,7 @@ class MainActivity : ComponentActivity() {
                     }
             }
         }
-        filePicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        filePicker = registerForActivityResult(AndroidDocumentsMultiPicker()) { uris ->
             if (pendingUpload == accountUi.active?.key) upload(uris, parent = pendingUploadParent)
             pendingUpload = null
         }
@@ -337,7 +377,7 @@ class MainActivity : ComponentActivity() {
                         withContext(Dispatchers.IO) { listingCache.clearAll() }
                         Toast.makeText(this@MainActivity, "Đã xóa cache danh sách tệp", Toast.LENGTH_SHORT).show()
                     } },
-                    viewer, ::openPreview, ::closePreview, ::updatePreviewText, ::savePreviewText, ::swipePreview,
+                    viewer, { file, queue -> openPreview(file, swipeQueue = queue) }, ::closePreview, ::updatePreviewText, ::savePreviewText, ::swipePreview,
                     playback, ::minimizePreview, ::expandPreview, browserModels = browserTabModels
                 )
             }
@@ -911,10 +951,6 @@ class MainActivity : ComponentActivity() {
         }
         if (model.loading) {
             Toast.makeText(this, "Danh sách đang cập nhật. Hãy thử lại ngay sau đó.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (account.type == AccountType.SERVICE && model.path.isEmpty()) {
-            Toast.makeText(this, "Mở một thư mục có quyền ghi của Service Account trước khi tải lên.", Toast.LENGTH_LONG).show()
             return
         }
         pendingUpload = account.key

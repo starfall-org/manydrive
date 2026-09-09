@@ -2,20 +2,28 @@ package com.starfall.gsadrive
 
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
+import android.app.Notification
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Icon
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.util.BitmapLoader
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
+import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaConstants
 import android.os.Bundle
@@ -27,6 +35,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import androidx.media3.session.MediaSessionService
+import androidx.core.graphics.drawable.IconCompat
+import com.google.common.collect.ImmutableList
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.MoreExecutors
 import com.starfall.gsadrive.data.DriveApi
 import com.starfall.gsadrive.data.DriveFile
 import com.starfall.gsadrive.data.S3Api
@@ -36,6 +48,8 @@ import java.io.IOException
 import java.io.RandomAccessFile
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
 import kotlinx.coroutines.runBlocking
 
 /** Information needed to lazily materialize one media item into the viewer cache. */
@@ -50,7 +64,18 @@ data class PlaybackSource(
     fun toMediaItem(): MediaItem = MediaItem.Builder()
         .setMediaId(mediaId)
         .setUri(Uri.Builder().scheme("manydrive").authority("media").appendQueryParameter("id", mediaId).build())
-        .setMediaMetadata(MediaMetadata.Builder().setTitle(file.name).build())
+        .setMediaMetadata(
+            MediaMetadata.Builder().setTitle(file.name).apply {
+                if (!file.thumbnailUrl.isNullOrBlank()) {
+                    // Keep auth/source details inside the app. MediaSession resolves this URI with
+                    // its BitmapLoader and publishes the decoded artwork to platform media controls.
+                    setArtworkUri(
+                        Uri.Builder().scheme("manydrive-artwork").authority("thumbnail")
+                            .appendQueryParameter("id", mediaId).build()
+                    )
+                }
+            }.build()
+        )
         .build()
 }
 
@@ -183,10 +208,12 @@ private class ManyDriveMediaDataSource : BaseDataSource(false) {
     }
 }
 
-/** A silent ExoPlayer shell for a direct pager neighbor. Callers keep it unprepared/frozen until selected. */
+/** A page starts paused and muted; the session activates this same player when selected. */
 @OptIn(UnstableApi::class)
 internal fun createMediaPagePlayer(context: android.content.Context): ExoPlayer = ExoPlayer.Builder(context)
     .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(context, ManyDriveMediaDataSource.Factory())))
+    .setSeekBackIncrementMs(10_000L)
+    .setSeekForwardIncrementMs(10_000L)
     .setLoadControl(androidx.media3.exoplayer.DefaultLoadControl.Builder()
         .setBufferDurationsMs(1000, 5000, 250, 500).build())
     .build().apply { volume = 0f; playWhenReady = false }
@@ -213,38 +240,114 @@ object PlaybackSettings {
 }
 
 @OptIn(UnstableApi::class)
+private class ManyDriveArtworkBitmapLoader : BitmapLoader {
+    private val executor = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(2))
+
+    override fun supportsMimeType(mimeType: String): Boolean = mimeType.startsWith("image/")
+
+    override fun decodeBitmap(data: ByteArray): ListenableFuture<Bitmap> = executor.submit(Callable {
+        BitmapFactory.decodeByteArray(data, 0, data.size)
+            ?: throw IOException("Không thể giải mã artwork")
+    })
+
+    override fun loadBitmap(uri: Uri): ListenableFuture<Bitmap> = executor.submit(Callable {
+        if (uri.scheme != "manydrive-artwork") throw IOException("Artwork URI không được hỗ trợ: $uri")
+        val mediaId = uri.getQueryParameter("id") ?: throw IOException("Artwork thiếu media id")
+        val source = PlaybackSourceRegistry.get(mediaId) ?: throw IOException("Không tìm thấy nguồn artwork")
+        val thumbnailUrl = source.file.thumbnailUrl ?: throw IOException("Media không có thumbnail")
+        ThumbnailRepository.load(thumbnailUrl, source.accessToken)
+    })
+
+    fun release() { executor.shutdownNow() }
+}
+
+@OptIn(UnstableApi::class)
+private class FixedTransportNotificationProvider(context: Context) : MediaNotification.Provider {
+    private val appContext = context.applicationContext
+    private val delegate = DefaultMediaNotificationProvider(appContext).apply {
+        setSmallIcon(R.drawable.ic_notification)
+    }
+
+    override fun createNotification(
+        mediaSession: MediaSession,
+        mediaButtonPreferences: ImmutableList<CommandButton>,
+        actionFactory: MediaNotification.ActionFactory,
+        onNotificationChangedCallback: MediaNotification.Provider.Callback
+    ): MediaNotification {
+        val base = delegate.createNotification(
+            mediaSession,
+            mediaButtonPreferences,
+            actionFactory,
+            onNotificationChangedCallback
+        )
+        val player = mediaSession.player
+        val previous = CommandButton.Builder(CommandButton.ICON_PREVIOUS)
+            .setDisplayName("Previous")
+            .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+            .setSlots(CommandButton.SLOT_BACK)
+            .build()
+        val playPause = CommandButton.Builder(
+            if (player.playWhenReady && player.playbackState != Player.STATE_ENDED)
+                CommandButton.ICON_PAUSE else CommandButton.ICON_PLAY
+        )
+            .setDisplayName(if (player.playWhenReady && player.playbackState != Player.STATE_ENDED) "Tạm dừng" else "Phát")
+            .setPlayerCommand(Player.COMMAND_PLAY_PAUSE)
+            .setSlots(CommandButton.SLOT_CENTRAL)
+            .build()
+        val next = CommandButton.Builder(CommandButton.ICON_NEXT)
+            .setDisplayName("Next")
+            .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+            .setSlots(CommandButton.SLOT_FORWARD)
+            .build()
+
+        fun action(button: CommandButton, enabled: Boolean): Notification.Action {
+            val pendingIntent = if (enabled) {
+                actionFactory.createMediaAction(
+                    mediaSession,
+                    IconCompat.createWithResource(appContext, button.iconResId),
+                    button.displayName,
+                    button.playerCommand
+                ).actionIntent
+            } else null
+            return Notification.Action.Builder(
+                Icon.createWithResource(appContext, button.iconResId),
+                button.displayName,
+                pendingIntent
+            ).build()
+        }
+
+        val rebuilt = Notification.Builder.recoverBuilder(appContext, base.notification)
+            .setActions(
+                action(previous, player.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)),
+                action(playPause, player.isCommandAvailable(Player.COMMAND_PLAY_PAUSE)),
+                action(next, player.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM))
+            )
+            .build()
+        return MediaNotification(base.notificationId, rebuilt)
+    }
+
+    override fun handleCustomCommand(mediaSession: MediaSession, action: String, extras: Bundle): Boolean =
+        delegate.handleCustomCommand(mediaSession, action, extras)
+
+    override fun getNotificationChannelInfo(): MediaNotification.Provider.NotificationChannelInfo =
+        delegate.notificationChannelInfo
+}
+
+@OptIn(UnstableApi::class)
 class MediaPlaybackService : MediaSessionService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var mediaSession: MediaSession? = null
-    private lateinit var player: ExoPlayer
+    private lateinit var player: PagedPlaybackPlayer
+    private lateinit var artworkBitmapLoader: ManyDriveArtworkBitmapLoader
 
     override fun onCreate() {
         super.onCreate()
-        setMediaNotificationProvider(DefaultMediaNotificationProvider(this).apply {
-            setSmallIcon(R.drawable.ic_notification)
-        })
-        val dataSourceFactory = DefaultDataSource.Factory(this, ManyDriveMediaDataSource.Factory())
-        player = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
-            // Legacy/system previous actions must skip tracks even after playback has progressed.
-            .setMaxSeekToPreviousPositionMs(Long.MAX_VALUE)
-            .setSeekBackIncrementMs(10_000L)
-            .setSeekForwardIncrementMs(10_000L)
-            .build()
+        setMediaNotificationProvider(FixedTransportNotificationProvider(this))
+        player = PagedPlaybackPlayer(this)
+        artworkBitmapLoader = ManyDriveArtworkBitmapLoader()
+        MediaPagePlayback.attach(player)
 
         player.addListener(object : Player.Listener {
-            override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
-                val oldId = oldPosition.mediaItem?.mediaId
-                val newId = newPosition.mediaItem?.mediaId
-                if (oldId != newId) {
-                    PlaybackProgress.save(this@MediaPlaybackService, oldId,
-                        if (reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION) 0L else oldPosition.positionMs)
-                    if (newId != null) {
-                        val resume = PlaybackProgress.read(this@MediaPlaybackService, newId)
-                        if (resume > 0L) player.seekTo(resume)
-                    }
-                }
-            }
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) PlaybackProgress.save(this@MediaPlaybackService, player.currentMediaItem?.mediaId, 0L)
             }
@@ -260,13 +363,6 @@ class MediaPlaybackService : MediaSessionService() {
             }
         }
 
-        player.setPauseAtEndOfMediaItems(!PlaybackSettings.slideshowEnabled.value)
-        serviceScope.launch {
-            PlaybackSettings.slideshowEnabled.collect { enabled ->
-                player.setPauseAtEndOfMediaItems(!enabled)
-            }
-        }
-
         val launchIntent = Intent(this, MainActivity::class.java)
         val sessionActivity = PendingIntent.getActivity(
             this,
@@ -275,6 +371,21 @@ class MediaPlaybackService : MediaSessionService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         mediaSession = MediaSession.Builder(this, player)
+            .setBitmapLoader(artworkBitmapLoader)
+            // Let Media3 publish periodic position updates; SystemUI owns the native media progress UI.
+            .setPeriodicPositionUpdateEnabled(true)
+            .setMediaButtonPreferences(listOf(
+                CommandButton.Builder(CommandButton.ICON_PREVIOUS)
+                    .setDisplayName("Previous")
+                    .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                    .setSlots(CommandButton.SLOT_BACK)
+                    .build(),
+                CommandButton.Builder(CommandButton.ICON_NEXT)
+                    .setDisplayName("Next")
+                    .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                    .setSlots(CommandButton.SLOT_FORWARD)
+                    .build()
+            ))
             // Use the platform's native previous/play/next transport actions. Reserve
             // both side slots so an unavailable previous action cannot move next left.
             .setSessionExtras(Bundle().apply {
@@ -298,11 +409,13 @@ class MediaPlaybackService : MediaSessionService() {
     override fun onDestroy() {
         if (player.playbackState != Player.STATE_ENDED) PlaybackProgress.save(this, player.currentMediaItem?.mediaId, player.currentPosition)
         serviceScope.cancel()
+        MediaPagePlayback.attach(null)
         mediaSession?.run {
             player.release()
             release()
         }
         mediaSession = null
+        if (::artworkBitmapLoader.isInitialized) artworkBitmapLoader.release()
         PlaybackSourceRegistry.clear()
         super.onDestroy()
     }

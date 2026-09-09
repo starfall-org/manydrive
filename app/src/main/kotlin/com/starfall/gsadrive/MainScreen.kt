@@ -85,7 +85,7 @@ internal fun App(
     setSuperDark: (Boolean) -> Unit = {},
     clearCache: () -> Unit = {},
     viewer: ViewerState? = null,
-    openFile: (DriveFile) -> Unit = {},
+    openFile: (DriveFile, List<DriveFile>) -> Unit = { _, _ -> },
     closeViewer: () -> Unit = {},
     updateViewerText: (String) -> Unit = {},
     saveViewerText: () -> Unit = {},
@@ -177,8 +177,11 @@ internal fun App(
     }
     val openAccounts = { showAccounts = true }
     val viewerExpanded = viewer != null && !viewer.minimized
+    val mediaViewer = viewer?.takeIf { isSwipePreview(it.file) && it.swipeQueue.isNotEmpty() }
+    val mediaFull = viewerExpanded && mediaViewer != null && playback != null
+    // Non-media previews still use the app viewer scaffold. Expanded media does not.
+    val appViewerExpanded = viewerExpanded && mediaViewer == null
     val viewerBlack = viewerExpanded && viewer?.let { isSwipePreview(it.file) } == true
-    val mediaViewer = viewer?.takeIf { isMediaPreview(it.file) && it.localPath != null && it.error == null }
     var miniBounds by remember { mutableStateOf<Rect?>(null) }
     var playerTopPadding by remember { mutableStateOf(0.dp) }
     val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
@@ -202,7 +205,7 @@ internal fun App(
     }
     BackHandler(enabled = !viewerExpanded && showFabMenu) { showFabMenu = false }
     BackHandler(enabled = !viewerExpanded && drawerState.isOpen && !showFabMenu) { drawerScope.launch { drawerState.close() } }
-    BackHandler(enabled = !viewerExpanded && showSettings && !drawerState.isOpen) { showSettings = false }
+    BackHandler(enabled = !appViewerExpanded && showSettings && !drawerState.isOpen) { showSettings = false }
     BackHandler(
         enabled = !viewerExpanded && selected == 3 && !showFabMenu && !drawerState.isOpen && !showSettings &&
             !showAccounts && !showTypes && !addingS3
@@ -240,18 +243,13 @@ internal fun App(
         }
     ) {
         Box(Modifier.fillMaxSize()) {
+            // Keep the browser mounted and geometrically stable behind the independent media
+            // screen. This avoids rebuilding the whole browser during mini/full transitions.
             Scaffold(
-                modifier = Modifier.navigationSwipes(
-                    enabled = !viewerExpanded && drawerState.isClosed && !drawerState.isAnimationRunning &&
-                        !showFabMenu && !showAccounts && !showTypes && !addingS3 && !showCreateFolderDialog,
-                    allowTabSwipes = false
-                ) { gesture ->
-                    if (gesture == NavigationSwipe.OPEN_DRAWER) drawerScope.launch { drawerState.open() }
-                },
-                containerColor = if (viewerBlack) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.background,
+                containerColor = if (appViewerExpanded && viewerBlack) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.background,
                 topBar = {
                     when {
-                        !viewerExpanded && !showSettings && selected in 0..1 && active != null && model.path.isEmpty() ->
+                        !appViewerExpanded && !showSettings && selected in 0..1 && active != null && model.path.isEmpty() ->
                             DriveRootTopBar(
                                 query = searchQuery,
                                 onQueryChange = { value ->
@@ -261,7 +259,7 @@ internal fun App(
                                 onAccounts = openAccounts,
                                 account = active
                             )
-                        !viewerExpanded && !showSettings && selected in 0..1 && active != null && model.path.isNotEmpty() ->
+                        !appViewerExpanded && !showSettings && selected in 0..1 && active != null && model.path.isNotEmpty() ->
                             FolderBrowserTopBar(
                                 title = model.path.last().name,
                                 query = searchQuery,
@@ -279,7 +277,7 @@ internal fun App(
                                 onRefresh = reload,
                                 onAccounts = openAccounts
                             )
-                        !viewerExpanded && showSettings -> TopAppBar(
+                        !appViewerExpanded && showSettings -> TopAppBar(
                             title = {
                                 Text("Cài đặt", style = MaterialTheme.typography.headlineSmall)
                             },
@@ -293,14 +291,14 @@ internal fun App(
                         else -> CenterAlignedTopAppBar(
                             title = {
                                 Text(when {
-                                    viewerExpanded -> viewer?.file?.name.orEmpty()
+                                    appViewerExpanded -> viewer?.file?.name.orEmpty()
                                     selected == 3 -> "Thùng rác"
                                     else -> "ManyDrive"
                                 }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             },
                             navigationIcon = {
                                 when {
-                                    viewerExpanded -> IconButton(onClick = {
+                                    appViewerExpanded -> IconButton(onClick = {
                                         if (viewer?.let { isMediaPreview(it.file) } == true) minimizeViewer() else closeViewer()
                                     }) {
                                         Icon(Icons.AutoMirrored.Outlined.ArrowBack,
@@ -312,7 +310,7 @@ internal fun App(
                                 }
                             },
                             actions = {
-                                if (!viewerExpanded && !showSettings && active != null)
+                                if (!appViewerExpanded && !showSettings && active != null)
                                     AccountAvatar(active, openAccounts)
                             },
                             colors = TopAppBarDefaults.topAppBarColors(
@@ -325,7 +323,8 @@ internal fun App(
                     }
                 },
                 bottomBar = {
-                    if (!viewerExpanded || mediaViewer != null) Column(
+                    // This browser bar is retained only under the mini/full transition.
+                    if (!appViewerExpanded) Column(
                         modifier = if (showSettings) Modifier.navigationBarsPadding() else Modifier
                     ) {
                         if (mediaViewer != null && playback != null) {
@@ -346,7 +345,7 @@ internal fun App(
                     }
                 },
                 floatingActionButton = {
-                    if (!viewerExpanded && !showSettings) {
+                    if (!appViewerExpanded && !showSettings) {
                         Column(
                             horizontalAlignment = Alignment.End,
                             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -355,10 +354,30 @@ internal fun App(
                                 ExtendedFloatingActionButton(
                                     onClick = {
                                         showFabMenu = false
+                                        upload()
+                                    },
+                                    icon = { Icon(Icons.Outlined.UploadFile, null) },
+                                    text = { Text("Tải lên") },
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                ExtendedFloatingActionButton(
+                                    onClick = {
+                                        showFabMenu = false
+                                        uploadFolder()
+                                    },
+                                    icon = { Icon(Icons.Outlined.DriveFolderUpload, null) },
+                                    text = { Text("Tải thư mục") },
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                ExtendedFloatingActionButton(
+                                    onClick = {
+                                        showFabMenu = false
                                         newFolderName = ""
                                         showCreateFolderDialog = true
                                     },
-                                    icon = { Icon(Icons.Outlined.Folder, null) },
+                                    icon = { Icon(Icons.Outlined.CreateNewFolder, null) },
                                     text = { Text("Thư mục") },
                                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer
@@ -383,7 +402,7 @@ internal fun App(
                 SideEffect { playerTopPadding = padding.calculateTopPadding() }
                 Box(Modifier.fillMaxSize()) {
                     when {
-                        viewerExpanded && mediaViewer == null && viewer != null && playback != null -> FileViewerPage(
+                        appViewerExpanded && viewer != null && playback != null -> FileViewerPage(
                             padding = padding,
                             file = viewer.file,
                             localPath = viewer.localPath,
@@ -401,7 +420,7 @@ internal fun App(
                             onSaveText = saveViewerText
                         )
                         showSettings -> SettingsPage(padding, themeMode, superDark, setThemeMode, setSuperDark, clearCache)
-                        active == null -> StoragePage(model, padding, null, { showTypes = true }, openAccounts, signOut, openFile = openFile)
+                        active == null -> StoragePage(model, padding, null, { showTypes = true }, openAccounts, signOut, openFile = { file -> openFile(file, listOf(file)) })
                         selected == 3 -> PullToRefreshBox(
                             isRefreshing = model.loading,
                             onRefresh = { if (!model.loading && !accounts.busy) reload() },
@@ -412,7 +431,7 @@ internal fun App(
                         else -> HorizontalPager(
                             state = tabPagerState,
                             modifier = Modifier.fillMaxSize().padding(padding),
-                            userScrollEnabled = !viewerExpanded && !showSettings && !model.uploading && !accounts.busy &&
+                            userScrollEnabled = !appViewerExpanded && !showSettings && !model.uploading && !accounts.busy &&
                                 !showFabMenu && !showAccounts && !showTypes && !addingS3 && !showCreateFolderDialog &&
                                 isTabEnabled(active.type, 1),
                             beyondViewportPageCount = 1,
@@ -452,7 +471,7 @@ internal fun App(
                                                 if (globalSearch) openSearchFolder(file) else openFolder(file)
                                             }
                                         },
-                                        openFile = { file -> if (page == selected) openFile(file) },
+                                        openFile = { file, queue -> if (page == selected) openFile(file, queue) },
                                         actions = fileActions.copy(
                                             trash = if (active.type != AccountType.S3 && page == 0) fileActions.trash else null
                                         )
@@ -470,7 +489,26 @@ internal fun App(
                     }
                 }
             }
+            // Capture only the narrow left-edge strip above the pager. Normal horizontal
+            // drags elsewhere remain owned by HorizontalPager and therefore switch tabs.
+            if (!viewerExpanded && drawerState.isClosed && !drawerState.isAnimationRunning &&
+                !showFabMenu && !showAccounts && !showTypes && !addingS3 &&
+                !showCreateFolderDialog
+            ) {
+                Box(
+                    Modifier.align(Alignment.CenterStart)
+                        .fillMaxHeight()
+                        .width(24.dp)
+                        .navigationSwipes(enabled = true, allowTabSwipes = false) { gesture ->
+                            if (gesture == NavigationSwipe.OPEN_DRAWER) {
+                                drawerScope.launch { drawerState.open() }
+                            }
+                        }
+                )
+            }
+
             if (mediaViewer != null && playback != null) {
+                // Independent media overlay with its own header; browser chrome is never reused.
                 ExpandableMediaPlayer(
                     player = playback,
                     minimized = mediaViewer.minimized,
@@ -482,6 +520,7 @@ internal fun App(
                     queue = mediaViewer.swipeQueue,
                     index = mediaViewer.swipeIndex,
                     previewPaths = mediaViewer.previewPaths,
+                    error = mediaViewer.error,
                     onSwipeTo = swipeViewer
                 )
             }

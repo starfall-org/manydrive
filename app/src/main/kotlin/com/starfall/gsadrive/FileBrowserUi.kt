@@ -2,8 +2,10 @@ package com.starfall.gsadrive
 
 import com.starfall.gsadrive.ui.CopyableError
 
+import android.content.Context
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -22,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
@@ -294,7 +297,7 @@ internal fun FileBrowserPage(
     searchError: String? = null,
     authorize: () -> Unit,
     openFolder: (DriveFile) -> Unit,
-    openFile: (DriveFile) -> Unit,
+    openFile: (DriveFile, List<DriveFile>) -> Unit,
     actions: FileActionCallbacks = FileActionCallbacks()
 ) {
     val scopeKey = "${account.key}:${if (shared) 1 else 0}:${model.path.lastOrNull()?.id.orEmpty()}"
@@ -303,8 +306,20 @@ internal fun FileBrowserPage(
         model.path.isNotEmpty() -> BrowserSort.MODIFIED
         else -> BrowserSort.NAME
     }
-    var sortName by rememberSaveable(scopeKey) { mutableStateOf(defaultSort.name) }
-    var ascending by rememberSaveable(scopeKey) { mutableStateOf(defaultSort == BrowserSort.NAME) }
+    val context = LocalContext.current
+    val sortPreferences = remember(context) { context.getSharedPreferences("browser_sort", Context.MODE_PRIVATE) }
+    val sortPreferenceKey = "sort:$scopeKey"
+    val ascendingPreferenceKey = "ascending:$scopeKey"
+    var sortName by remember(scopeKey) {
+        mutableStateOf(sortPreferences.getString(sortPreferenceKey, defaultSort.name) ?: defaultSort.name)
+    }
+    var ascending by remember(scopeKey) {
+        mutableStateOf(
+            if (sortPreferences.contains(ascendingPreferenceKey))
+                sortPreferences.getBoolean(ascendingPreferenceKey, defaultSort == BrowserSort.NAME)
+            else defaultSort == BrowserSort.NAME
+        )
+    }
     var grid by rememberSaveable(account.key) { mutableStateOf(false) }
     var sortMenu by remember { mutableStateOf(false) }
     var actionFile by remember { mutableStateOf<DriveFile?>(null) }
@@ -329,25 +344,65 @@ internal fun FileBrowserPage(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    sort.label,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(start = 8.dp, end = 2.dp)
+                )
                 Box {
-                    TextButton(onClick = { sortMenu = true }) {
-                        Text(sort.label, color = MaterialTheme.colorScheme.onSurface)
-                        Spacer(Modifier.width(4.dp))
-                        Icon(Icons.Outlined.ArrowDropDown, null)
+                    val directionDescription = when (sort) {
+                        BrowserSort.NAME -> if (ascending) "A đến Z" else "Z đến A"
+                        BrowserSort.MODIFIED, BrowserSort.SHARED ->
+                            if (ascending) "Từ cũ đến mới" else "Từ mới đến cũ"
+                    }
+                    IconButton(onClick = { sortMenu = true }) {
+                        Icon(
+                            if (ascending) Icons.Outlined.ArrowUpward else Icons.Outlined.ArrowDownward,
+                            "Sắp xếp: $directionDescription"
+                        )
                     }
                     DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                        Text(
+                            "Sắp xếp theo",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                        )
                         BrowserSort.entries.filter { it != BrowserSort.SHARED || shared }.forEach { option ->
-                            DropdownMenuItem(text = { Text(option.label) }, onClick = {
-                                sortName = option.name
-                                ascending = option == BrowserSort.NAME
-                                sortMenu = false
-                            })
+                            DropdownMenuItem(
+                                text = { Text(option.label) },
+                                leadingIcon = {
+                                    if (sort == option) Icon(Icons.Outlined.Check, null)
+                                    else Spacer(Modifier.size(24.dp))
+                                },
+                                onClick = {
+                                    sortName = option.name
+                                    sortPreferences.edit().putString(sortPreferenceKey, option.name).apply()
+                                    sortMenu = false
+                                }
+                            )
+                        }
+                        HorizontalDivider()
+                        val directionOptions = if (sort == BrowserSort.NAME) {
+                            listOf(false to "Z đến A", true to "A đến Z")
+                        } else {
+                            listOf(false to "Từ mới đến cũ", true to "Từ cũ đến mới")
+                        }
+                        directionOptions.forEach { (value, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                leadingIcon = {
+                                    if (ascending == value) Icon(Icons.Outlined.Check, null)
+                                    else Spacer(Modifier.size(24.dp))
+                                },
+                                onClick = {
+                                    ascending = value
+                                    sortPreferences.edit().putBoolean(ascendingPreferenceKey, value).apply()
+                                    sortMenu = false
+                                }
+                            )
                         }
                     }
-                }
-                IconButton(onClick = { ascending = !ascending }) {
-                    Icon(if (ascending) Icons.Outlined.ArrowUpward else Icons.Outlined.ArrowDownward,
-                        if (ascending) "Tăng dần" else "Giảm dần")
                 }
                 Spacer(Modifier.weight(1f))
                 Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
@@ -394,7 +449,14 @@ internal fun FileBrowserPage(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(visible, key = { it.id }) { file ->
-                    FileGridCard(file, shared && !globalSearch, onOpen = openFolder, onPreview = openFile, onMenu = { actionFile = it })
+                    FileGridCard(
+                        file,
+                        shared && !globalSearch,
+                        accessToken = model.token,
+                        onOpen = openFolder,
+                        onPreview = { selected -> openFile(selected, visible.filter(::isSwipePreview)) },
+                        onMenu = { actionFile = it }
+                    )
                 }
             }
         } else if (shared && !globalSearch) {
@@ -408,7 +470,13 @@ internal fun FileBrowserPage(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp))
                     }
                     items(files, key = { it.id }) { file ->
-                        FileListRow(file, shared = true, onOpen = openFolder, onPreview = openFile, onMenu = { actionFile = it })
+                        FileListRow(
+                            file,
+                            shared = true,
+                            onOpen = openFolder,
+                            onPreview = { selected -> openFile(selected, visible.filter(::isSwipePreview)) },
+                            onMenu = { actionFile = it }
+                        )
                     }
                 }
             }
@@ -416,7 +484,13 @@ internal fun FileBrowserPage(
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 items(visible, key = { it.id }) { file ->
-                    FileListRow(file, shared = false, onOpen = openFolder, onPreview = openFile, onMenu = { actionFile = it })
+                    FileListRow(
+                        file,
+                        shared = false,
+                        onOpen = openFolder,
+                        onPreview = { selected -> openFile(selected, visible.filter(::isSwipePreview)) },
+                        onMenu = { actionFile = it }
+                    )
                 }
             }
         }
@@ -476,13 +550,32 @@ private fun FileListRow(
 }
 
 @Composable
+private fun rememberFileThumbnail(file: DriveFile, accessToken: String?): androidx.compose.ui.graphics.ImageBitmap? {
+    val url = file.thumbnailUrl ?: return null
+    val state = produceState<androidx.compose.ui.graphics.ImageBitmap?>(
+        initialValue = ThumbnailRepository.cached(url)?.asImageBitmap(),
+        key1 = url,
+        key2 = accessToken
+    ) {
+        if (value == null) {
+            value = withContext(Dispatchers.IO) {
+                runCatching { ThumbnailRepository.load(url, accessToken).asImageBitmap() }.getOrNull()
+            }
+        }
+    }
+    return state.value
+}
+
+@Composable
 private fun FileGridCard(
     file: DriveFile,
     shared: Boolean,
+    accessToken: String?,
     onOpen: (DriveFile) -> Unit,
     onPreview: (DriveFile) -> Unit,
     onMenu: (DriveFile) -> Unit
 ) {
+    val thumbnail = rememberFileThumbnail(file, accessToken)
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(16.dp),
@@ -491,17 +584,56 @@ private fun FileGridCard(
             onLongClick = { onMenu(file) }
         )
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                FileTypeIcon(file, Modifier.size(36.dp))
-                Spacer(Modifier.weight(1f))
+                FileTypeIcon(file, Modifier.size(34.dp))
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    file.name,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
                 IconButton(onClick = { onMenu(file) }) { Icon(Icons.Outlined.MoreVert, "Tùy chọn") }
             }
-            Text(file.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(if (shared) formatDriveDate(file.sharedWithMeTime ?: file.modifiedTime, "Được chia sẻ")
-                else formatDriveDate(file.modifiedTime, "Đã chỉnh sửa"),
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (thumbnail != null && !file.isFolder) {
+                Box(
+                    Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                ) {
+                    Image(
+                        bitmap = thumbnail,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    if (shared) {
+                        Surface(
+                            modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f)
+                        ) {
+                            Icon(
+                                Icons.Outlined.Group,
+                                contentDescription = "Tệp được chia sẻ",
+                                modifier = Modifier.padding(6.dp).size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            } else {
+                Text(
+                    if (shared) formatDriveDate(file.sharedWithMeTime ?: file.modifiedTime, "Được chia sẻ")
+                    else formatDriveDate(file.modifiedTime, "Đã chỉnh sửa"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }

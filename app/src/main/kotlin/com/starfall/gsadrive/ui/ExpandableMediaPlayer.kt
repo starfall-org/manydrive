@@ -12,20 +12,24 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
@@ -34,17 +38,18 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import com.starfall.gsadrive.PlaybackProgress
+import com.starfall.gsadrive.MediaPagePlayback
 import com.starfall.gsadrive.PlaybackSourceRegistry
-import com.starfall.gsadrive.createMediaPagePlayer
 import com.starfall.gsadrive.data.DriveFile
+import com.starfall.gsadrive.isMediaPreview
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
  * The horizontal pager is the viewer itself, not a swipe animation layered over one fixed item.
- * Natural LTR order means drag left -> next item and drag right -> previous item.
+ * Items run left to right: drag from right to left for next, left to right for previous.
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -59,6 +64,7 @@ internal fun ExpandableMediaPlayer(
     queue: List<DriveFile>,
     index: Int,
     previewPaths: Map<String, String>,
+    error: String? = null,
     onSwipeTo: (Int) -> Unit
 ) {
     var fullscreen by remember { mutableStateOf(false) }
@@ -112,32 +118,44 @@ internal fun ExpandableMediaPlayer(
         }
     }
 
-    val density = LocalDensity.current
-    var rootTop by remember { mutableFloatStateOf(0f) }
-    var dragFraction by remember(player) { mutableStateOf<Float?>(null) }
-    var dragDistance by remember(player) { mutableFloatStateOf(0f) }
-    val fraction by animateFloatAsState(
-        targetValue = dragFraction ?: if (minimized) 1f else 0f,
-        animationSpec = if (dragFraction != null) snap() else tween(240),
-        label = "player expansion"
-    )
+    val pageOwner by MediaPagePlayback.owner.collectAsState()
+    val playlistRevision = pageOwner?.playlistRevision?.collectAsState()?.value
+    // Warm adjacent pages once, then keep at most prev/current/next resident for the viewer's
+    // lifetime. Creating/releasing ExoPlayers on every mini/full transition caused frame spikes.
+    var neighborsComposed by remember { mutableStateOf(!minimized) }
+    LaunchedEffect(pageOwner, queue) {
+        if (!neighborsComposed) {
+            delay(300)
+            neighborsComposed = true
+        }
+    }
+    val visibleMediaIds = remember(queue, index, neighborsComposed, playlistRevision) {
+        val visibleFiles = (if (neighborsComposed) listOf(index - 1, index, index + 1) else listOf(index))
+            .mapNotNull(queue::getOrNull).map { it.id }.toSet()
+        PlaybackSourceRegistry.all().filter { it.file.id in visibleFiles }.map { it.mediaId }.toSet()
+    }
+    // Apply the window before page acquisition effects, including images between media items.
+    DisposableEffect(pageOwner, visibleMediaIds) {
+        pageOwner?.setVisiblePages(visibleMediaIds)
+        onDispose { }
+    }
+    DisposableEffect(pageOwner) {
+        onDispose { pageOwner?.setVisiblePages(null) }
+    }
+
     val currentMinimize by rememberUpdatedState(onMinimize)
     val currentExpand by rememberUpdatedState(onExpand)
     val currentSwipe by rememberUpdatedState(onSwipeTo)
     val currentIndex by rememberUpdatedState(index)
+
+    val density = LocalDensity.current
     val systemBottomInset = WindowInsets.safeDrawing.getBottom(density)
 
-    BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { rootTop = it.positionInRoot().y }) {
-        val fullTop = if (fullscreen) 0f else with(density) { topPadding.toPx() }
-        val bottomInset = if (fullscreen) 0 else systemBottomInset
-        val fullHeight = (constraints.maxHeight - fullTop - bottomInset).coerceAtLeast(1f)
+    BoxWithConstraints(Modifier.fillMaxSize()) {
         val miniHeight = miniBounds?.height ?: with(density) { 72.dp.toPx() }
-        val miniTop = miniBounds?.let { it.top - rootTop }
-            ?: (constraints.maxHeight - bottomInset - miniHeight)
-        val travel = (miniTop - fullTop).coerceAtLeast(1f)
-        val currentTravel by rememberUpdatedState(travel)
-        val height = fullHeight + (miniHeight - fullHeight) * fraction
-        val y = fullTop + (miniTop - fullTop) * fraction
+        val miniTop = miniBounds?.top ?: (constraints.maxHeight - systemBottomInset - miniHeight)
+        val fullHeight = if (fullscreen) constraints.maxHeight.toFloat()
+            else (constraints.maxHeight - systemBottomInset).coerceAtLeast(1).toFloat()
         val safeInitialIndex = index.coerceIn(0, queue.lastIndex.coerceAtLeast(0))
         val pager = rememberPagerState(initialPage = safeInitialIndex, pageCount = { queue.size })
 
@@ -151,15 +169,29 @@ internal fun ExpandableMediaPlayer(
             snapshotFlow { pager.isScrollInProgress to pager.settledPage }
                 .distinctUntilChanged()
                 .collect { (scrolling, page) ->
-                    // A settled pager page becomes the real selected viewer item immediately.
                     if (!scrolling && page in queue.indices && page != currentIndex) currentSwipe(page)
                 }
         }
+
+        var dragFraction by remember(player) { mutableStateOf<Float?>(null) }
+        var dragDistance by remember(player) { mutableFloatStateOf(0f) }
+        val fraction by animateFloatAsState(
+            targetValue = dragFraction ?: if (minimized) 1f else 0f,
+            animationSpec = if (dragFraction != null) snap() else tween(240),
+            label = "media screen transition"
+        )
+        val fullTop = 0f
+        val height = fullHeight + (miniHeight - fullHeight) * fraction
+        val y = fullTop + (miniTop - fullTop) * fraction
+        val travel = (miniTop - fullTop).coerceAtLeast(1f)
+        val miniChromeAlpha = ((fraction - 0.94f) / 0.06f).coerceIn(0f, 1f)
+        val headerAlpha = ((0.30f - fraction) / 0.30f).coerceIn(0f, 1f)
 
         Box(
             Modifier.offset { IntOffset(0, y.roundToInt()) }
                 .fillMaxWidth()
                 .height(with(density) { height.toDp() })
+                .background(Color.Black)
                 .clipToBounds()
                 .pointerInput(player, fullscreen) {
                     if (fullscreen) return@pointerInput
@@ -168,7 +200,7 @@ internal fun ExpandableMediaPlayer(
                         onVerticalDrag = { change, amount ->
                             change.consume()
                             dragDistance += amount
-                            dragFraction = ((dragFraction ?: fraction) + amount / currentTravel).coerceIn(0f, 1f)
+                            dragFraction = ((dragFraction ?: fraction) + amount / travel).coerceIn(0f, 1f)
                         },
                         onDragEnd = {
                             val collapse = when {
@@ -183,112 +215,108 @@ internal fun ExpandableMediaPlayer(
                     )
                 }
         ) {
-            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                HorizontalPager(
-                    state = pager,
-                    modifier = Modifier.fillMaxSize().background(Color.Black),
-                    userScrollEnabled = !minimized && fraction < 0.05f,
-                    beyondViewportPageCount = if (minimized) 0 else 1,
-                    key = { page -> queue[page].id }
-                ) { page ->
-                    val item = queue[page]
-                    if (item.mimeType.startsWith("image/")) {
-                        val path = previewPaths[item.id]
-                        if (path != null) ImageViewer(path)
-                        else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
+            MediaViewer(
+                player = player,
+                alwaysShowControls = queue.getOrNull(index)?.mimeType?.startsWith("audio/") == true,
+                compactFraction = fraction,
+                title = queue.getOrNull(index)?.name.orEmpty(),
+                onExpand = onExpand,
+                onClose = onClose,
+                interactive = queue.getOrNull(index)?.let { isMediaPreview(it) } == true,
+                miniChromeAlpha = miniChromeAlpha,
+                fullscreen = fullscreen,
+                onToggleFullscreen = { fullscreen = !fullscreen }
+            ) {
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    HorizontalPager(
+                        state = pager,
+                        reverseLayout = false,
+                        modifier = Modifier.fillMaxSize().background(Color.Black).testTag("media-pager"),
+                        userScrollEnabled = !minimized && fraction < 0.05f,
+                        beyondViewportPageCount = if (neighborsComposed) 1 else 0,
+                        key = { page -> queue[page].id }
+                    ) { page ->
+                        val item = queue[page]
+                        Box(Modifier.fillMaxSize().testTag("media-page-${item.id}")) {
+                            if (page == index && error != null) {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Text(error, color = Color.White, modifier = Modifier.padding(24.dp))
+                                }
+                            } else if (item.mimeType.startsWith("image/")) {
+                                val path = previewPaths[item.id]
+                                if (path != null) ImageViewer(path)
+                                else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator()
+                                }
+                            } else if (page == index || (neighborsComposed && abs(page - index) == 1)) {
+                                MediaItemPage(item = item, selected = page == index, compactFraction = fraction)
+                            } else {
+                                Box(Modifier.fillMaxSize().background(Color.Black))
+                            }
                         }
-                    } else if (page == index || abs(page - index) == 1) {
-                        // Only the current item and its direct neighbors are ever composed as media pages.
-                        MediaItemPage(
-                            item = item,
-                            sessionPlayer = player,
-                            selected = page == index,
-                            compactFraction = fraction,
-                            onExpand = onExpand,
-                            onClose = onClose,
-                            fullscreen = fullscreen,
-                            onToggleFullscreen = { fullscreen = !fullscreen }
-                        )
-                    } else {
-                        // A fast fling must not allocate a player for pages outside prev/current/next.
-                        Box(Modifier.fillMaxSize().background(Color.Black))
                     }
+                }
+            }
+
+            if (!fullscreen && headerAlpha > 0f) {
+                Row(
+                    Modifier.align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .graphicsLayer { alpha = headerAlpha }
+                        .statusBarsPadding()
+                        .height(64.dp)
+                        .background(Color.Black)
+                        .padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onMinimize) {
+                        Icon(
+                            Icons.AutoMirrored.Outlined.ArrowBack,
+                            contentDescription = "Thu nhỏ trình phát",
+                            tint = Color.White
+                        )
+                    }
+                    Text(
+                        queue.getOrNull(index)?.name.orEmpty(),
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                        color = Color.White,
+                        maxLines = 1
+                    )
                 }
             }
         }
     }
 }
 
-/**
- * The selected page exclusively uses the MediaSession player.
- * Direct neighbors get a frozen ExoPlayer object with a MediaItem assigned, but it is never
- * prepared or played, so it opens no cloud stream and allocates no decoder/buffer.
- */
+/** Each keyed pager page keeps the same player and surface before, during and after selection. */
 @OptIn(UnstableApi::class)
 @Composable
 private fun MediaItemPage(
     item: DriveFile,
-    sessionPlayer: Player,
     selected: Boolean,
-    compactFraction: Float,
-    onExpand: () -> Unit,
-    onClose: () -> Unit,
-    fullscreen: Boolean,
-    onToggleFullscreen: () -> Unit
+    compactFraction: Float
 ) {
-    val context = LocalContext.current
+    val owner by MediaPagePlayback.owner.collectAsState()
+    val revision = owner?.playlistRevision?.collectAsState()?.value
     val source = PlaybackSourceRegistry.all().firstOrNull { it.file.id == item.id }
-    if (source == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-        return
-    }
-
-    var sessionMediaId by remember(sessionPlayer) { mutableStateOf(sessionPlayer.currentMediaItem?.mediaId) }
-    DisposableEffect(sessionPlayer) {
-        val listener = object : Player.Listener {
-            override fun onEvents(player: Player, events: Player.Events) {
-                sessionMediaId = player.currentMediaItem?.mediaId
-            }
+    var pagePlayer by remember(owner, source?.mediaId) { mutableStateOf<Player?>(null) }
+    DisposableEffect(owner, source?.mediaId, revision) {
+        val borrowed = source?.let { owner?.acquire(it.mediaId) }
+        pagePlayer = borrowed
+        onDispose {
+            if (borrowed != null) owner?.relinquish(source.mediaId, borrowed)
         }
-        sessionPlayer.addListener(listener)
-        onDispose { sessionPlayer.removeListener(listener) }
     }
-
-    if (selected) {
-        if (sessionMediaId == source.mediaId) {
-            MediaViewer(
-                player = sessionPlayer,
-                alwaysShowControls = item.mimeType.startsWith("audio/"),
-                compactFraction = compactFraction,
-                title = item.name,
-                onExpand = onExpand,
-                onClose = onClose,
-                interactive = true,
-                fullscreen = fullscreen,
-                onToggleFullscreen = onToggleFullscreen
-            )
-        } else {
-            Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        }
-        return
+    val mediaPlayer = pagePlayer
+    if (mediaPlayer == null) {
+        AdjacentPreview(item)
+    } else {
+        MediaSurface(
+            player = mediaPlayer,
+            audio = item.mimeType.startsWith("audio/"),
+            compactFraction = compactFraction,
+            title = item.name,
+            selected = selected
+        )
     }
-
-    val frozenPlayer = remember(source.mediaId) { createMediaPagePlayer(context.applicationContext) }
-    DisposableEffect(frozenPlayer, source.mediaId) {
-        frozenPlayer.setMediaItem(source.toMediaItem(), PlaybackProgress.read(context, source.mediaId))
-        frozenPlayer.pause()
-        onDispose { frozenPlayer.release() }
-    }
-    MediaViewer(
-        player = frozenPlayer,
-        alwaysShowControls = item.mimeType.startsWith("audio/"),
-        compactFraction = compactFraction,
-        title = item.name,
-        onExpand = onExpand,
-        onClose = onClose,
-        interactive = false
-    )
 }

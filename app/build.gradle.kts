@@ -24,8 +24,9 @@ android {
         applicationId = "com.starfall.gsadrive"
         minSdk = 24
         targetSdk = 35
-        versionCode = 12
-        versionName = "2.3.12"
+        versionCode = 13
+        versionName = "2.3.13"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     splits {
@@ -78,6 +79,9 @@ dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.activity:activity-compose:1.10.0")

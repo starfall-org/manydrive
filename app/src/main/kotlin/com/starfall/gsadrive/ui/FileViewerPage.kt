@@ -10,7 +10,9 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.FullscreenExit
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -30,6 +32,7 @@ import com.starfall.gsadrive.R
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -84,6 +87,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -255,7 +259,7 @@ private fun ViewerContent(
 }
 
 @Composable
-private fun AdjacentPreview(file: DriveFile) {
+internal fun AdjacentPreview(file: DriveFile) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Icon(
@@ -381,8 +385,64 @@ internal fun ImageViewer(path: String) {
     }
 }
 
+/** A page owns only its media surface; the expanding pager draws one shared controls layer. */
+@OptIn(UnstableApi::class)
+@Composable
+internal fun MediaSurface(
+    player: Player,
+    audio: Boolean,
+    compactFraction: Float = 0f,
+    selected: Boolean = false,
+    title: String = ""
+) {
+    var isPlaying by remember(player) { mutableStateOf(player.isPlaying) }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
+        }
+        player.addListener(listener)
+        onDispose { player.removeListener(listener) }
+    }
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
+        val videoWidth = maxWidth * (1f - compactFraction) + 120.dp.coerceAtMost(maxWidth * 0.4f) * compactFraction
+        if (!audio) {
+            AndroidView(
+                modifier = Modifier.fillMaxHeight().width(videoWidth),
+                factory = { context ->
+                    (LayoutInflater.from(context).inflate(R.layout.media_player_surface, null) as PlayerView).apply {
+                        this.player = player
+                        useController = false
+                        setKeepContentOnPlayerReset(true)
+                        setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                        setShutterBackgroundColor(android.graphics.Color.BLACK)
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        keepScreenOn = selected && isPlaying
+                    }
+                },
+                update = { view ->
+                    if (view.player !== player) view.player = player
+                    view.useController = false
+                    view.keepScreenOn = selected && isPlaying
+                    view.setShowBuffering(if (selected) PlayerView.SHOW_BUFFERING_WHEN_PLAYING else PlayerView.SHOW_BUFFERING_ALWAYS)
+                },
+                onRelease = { view ->
+                    view.player = null
+                    view.keepScreenOn = false
+                }
+            )
+        } else {
+            // Audio has no video surface. Keeping a TextureView here made every mini/full
+            // transition resize a hardware surface for no benefit and caused visible hitches.
+            Box(Modifier.fillMaxHeight().width(videoWidth), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.AudioFile, null, tint = Color.LightGray, modifier = Modifier.size(36.dp))
+            }
+        }
+    }
+}
+
 /** PlayerView only owns the surface; Compose owns controls and seek gestures. */
 @OptIn(UnstableApi::class)
+@kotlin.OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun MediaViewer(
     player: Player,
@@ -392,8 +452,12 @@ internal fun MediaViewer(
     onExpand: () -> Unit = {},
     onClose: () -> Unit = {},
     interactive: Boolean = true,
+    miniChromeAlpha: Float = if (compactFraction > 0.99f) 1f else 0f,
     fullscreen: Boolean = false,
-    onToggleFullscreen: () -> Unit = {}
+    onToggleFullscreen: () -> Unit = {},
+    content: @Composable () -> Unit = {
+        MediaSurface(player, alwaysShowControls, compactFraction, interactive, title)
+    }
 ) {
     var controlsVisible by remember(player) { mutableStateOf(true) }
     var interactionVersion by remember { mutableLongStateOf(0L) }
@@ -451,34 +515,7 @@ internal fun MediaViewer(
         feedback = null
     }
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
-        val videoWidth = maxWidth * (1f - compactFraction) + 120.dp.coerceAtMost(maxWidth * 0.4f) * compactFraction
-        AndroidView(
-            modifier = Modifier.fillMaxHeight().width(videoWidth),
-            factory = { context ->
-                (LayoutInflater.from(context).inflate(R.layout.media_player_surface, null) as PlayerView).apply {
-                    this.player = player
-                    useController = false
-                    setKeepContentOnPlayerReset(true)
-                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
-                    setShutterBackgroundColor(android.graphics.Color.BLACK)
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    keepScreenOn = interactive
-                }
-            },
-            update = { view ->
-                if (view.player !== player) view.player = player
-                view.useController = false
-                view.keepScreenOn = interactive
-                view.setShowBuffering(if (interactive) PlayerView.SHOW_BUFFERING_WHEN_PLAYING else PlayerView.SHOW_BUFFERING_ALWAYS)
-            },
-            onRelease = { view ->
-                view.player = null
-                view.keepScreenOn = false
-            }
-        )
-        Box(
-            Modifier.fillMaxSize().pointerInput(player) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black).pointerInput(player) {
                 detectTapGestures(onTap = { if (!currentInteractive) return@detectTapGestures; if (currentCompact) currentExpand() else { controlsVisible = !controlsVisible; interactionVersion++ } }, onDoubleTap = { offset ->
                     if (!currentInteractive) return@detectTapGestures
                     if (currentCompact) {
@@ -493,63 +530,140 @@ internal fun MediaViewer(
                         feedbackVersion++
                     }
                 })
-            }
-        )
-        if (alwaysShowControls) {
-            Box(Modifier.fillMaxHeight().width(videoWidth), contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.AudioFile, null, tint = Color.LightGray)
-            }
+    }) {
+        val videoWidth = maxWidth * (1f - compactFraction) + 120.dp.coerceAtMost(maxWidth * 0.4f) * compactFraction
+        val miniBackground = MaterialTheme.colorScheme.surfaceContainerHigh
+        val miniContentColor = MaterialTheme.colorScheme.onSurface
+        content()
+        if (miniChromeAlpha > 0f && videoWidth < maxWidth) {
+            Box(
+                Modifier.align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .width(maxWidth - videoWidth)
+                    .graphicsLayer { alpha = miniChromeAlpha.coerceIn(0f, 1f) }
+                    .background(miniBackground)
+            )
         }
         feedback?.let {
             Text(it, Modifier.align(Alignment.Center).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))).padding(horizontal = 20.dp, vertical = 12.dp),
                 color = Color.White)
         }
-        if (compact && interactive) {
-            Row(Modifier.fillMaxSize().graphicsLayer { alpha = ((compactFraction - 0.85f) / 0.15f).coerceIn(0f, 1f) }
+        if (miniChromeAlpha > 0f && compact && interactive) {
+            Row(Modifier.fillMaxSize()
+                .graphicsLayer { alpha = miniChromeAlpha.coerceIn(0f, 1f) }
                 .padding(start = videoWidth, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                Text(title, Modifier.weight(1f).padding(horizontal = 8.dp), color = Color.White,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                CompositionLocalProvider(LocalContentColor provides Color.White) {
+                Text(
+                    title,
+                    Modifier.weight(1f).padding(horizontal = 8.dp),
+                    color = miniContentColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                CompositionLocalProvider(LocalContentColor provides miniContentColor) {
                     PlayPauseButton(player)
-                    IconButton(onClick = onClose) { Icon(Icons.Outlined.Close, "Đóng trình phát") }
+                    IconButton(onClick = onClose) {
+                        Icon(Icons.Outlined.Close, "Đóng trình phát", tint = miniContentColor)
+                    }
                 }
             }
         }
-        if (compactFraction < 0.5f && controlsVisible && interactive) Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                .graphicsLayer { alpha = (1f - compactFraction * 2f).coerceIn(0f, 1f) }
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))).padding(horizontal = 20.dp, vertical = 12.dp),
+        val fullControlsAlpha = ((0.55f - compactFraction) / 0.20f).coerceIn(0f, 1f)
+        val fullControlsInteractive = fullControlsAlpha > 0.98f
+        if (controlsVisible && interactive) Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().testTag("media-controls")
+                .graphicsLayer { alpha = fullControlsAlpha }
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))))
+                .padding(horizontal = 20.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                title,
-                Modifier.fillMaxWidth(),
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleSmall
+            val progressColor = Color.White.copy(alpha = 0.78f)
+            Slider(
+                value = if (dragging) scrubPosition else position.toFloat().coerceIn(0f, duration.toFloat()),
+                onValueChange = { dragging = true; scrubPosition = it; interactionVersion++ },
+                onValueChangeFinished = {
+                    player.seekTo(scrubPosition.toLong().coerceIn(0L, duration))
+                    dragging = false
+                },
+                valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
+                enabled = fullControlsInteractive && seekable && duration > 0,
+                modifier = Modifier.fillMaxWidth().height(20.dp)
+                    .semantics { contentDescription = "Tiến độ phát" },
+                thumb = {
+                    // Use a centered vertical tick rather than a dot so it reads as the playhead.
+                    Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.width(2.dp).height(12.dp).background(progressColor))
+                    }
+                },
+                track = { sliderState ->
+                    val range = sliderState.valueRange
+                    val span = (range.endInclusive - range.start).coerceAtLeast(0.0001f)
+                    val playedFraction = ((sliderState.value - range.start) / span).coerceIn(0f, 1f)
+                    Canvas(Modifier.fillMaxWidth().height(20.dp)) {
+                        val centerY = size.height / 2f
+                        val playedX = size.width * playedFraction
+                        val thin = 1.dp.toPx()
+                        val thick = 3.dp.toPx()
+                        drawLine(
+                            color = progressColor,
+                            start = androidx.compose.ui.geometry.Offset(0f, centerY),
+                            end = androidx.compose.ui.geometry.Offset(size.width, centerY),
+                            strokeWidth = thin
+                        )
+                        if (playedX > 0f) {
+                            drawLine(
+                                color = progressColor,
+                                start = androidx.compose.ui.geometry.Offset(0f, centerY),
+                                end = androidx.compose.ui.geometry.Offset(playedX, centerY),
+                                strokeWidth = thick
+                            )
+                        }
+                    }
+                }
             )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(mediaTime(if (dragging) scrubPosition.toLong() else position), color = Color.White)
+                Text(mediaTime(duration), color = Color.White)
+            }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box {
-                    IconButton(onClick = { settingsOpen = true; interactionVersion++ }) {
+                    IconButton(enabled = fullControlsInteractive, onClick = { settingsOpen = true; interactionVersion++ }) {
                         Icon(Icons.Outlined.Settings, "Cài đặt phát", tint = Color.White)
                     }
-                    DropdownMenu(expanded = settingsOpen, onDismissRequest = { settingsOpen = false; interactionVersion++ }) {
-                        DropdownMenuItem(text = { Text("Tự động chuyển bài") },
-                            trailingIcon = { Switch(checked = slideshowEnabled, onCheckedChange = {
-                                PlaybackSettings.setSlideshowEnabled(it); interactionVersion++
-                            }) },
-                            onClick = { PlaybackSettings.setSlideshowEnabled(!slideshowEnabled); interactionVersion++ })
+                    DropdownMenu(
+                        expanded = settingsOpen,
+                        onDismissRequest = { settingsOpen = false; interactionVersion++ },
+                        containerColor = Color.Black.copy(alpha = 0.82f),
+                        tonalElevation = 0.dp
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Tự động chuyển bài", color = Color.White) },
+                            trailingIcon = {
+                                Switch(
+                                    checked = slideshowEnabled,
+                                    onCheckedChange = {
+                                        PlaybackSettings.setSlideshowEnabled(it); interactionVersion++
+                                    },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = Color.White.copy(alpha = 0.34f),
+                                        uncheckedThumbColor = Color.White,
+                                        uncheckedTrackColor = Color.Transparent,
+                                        uncheckedBorderColor = Color.White.copy(alpha = 0.65f)
+                                    )
+                                )
+                            },
+                            onClick = { PlaybackSettings.setSlideshowEnabled(!slideshowEnabled); interactionVersion++ }
+                        )
                     }
                 }
                 Spacer(Modifier.weight(1f))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                    IconButton(enabled = seekable, onClick = { player.seekBack(); interactionVersion++ }) {
+                    IconButton(enabled = fullControlsInteractive && seekable, onClick = { player.seekBack(); interactionVersion++ }) {
                         Icon(Icons.Outlined.Replay10, "Lùi 10 giây", tint = Color.White)
                     }
                     CompositionLocalProvider(LocalContentColor provides Color.White) {
-                        IconButton(onClick = {
+                        IconButton(enabled = fullControlsInteractive, onClick = {
                             if (player.playWhenReady && player.playbackState != Player.STATE_ENDED) player.pause()
                             else {
                                 if (player.playbackState == Player.STATE_ENDED) player.seekTo(0)
@@ -562,12 +676,12 @@ internal fun MediaViewer(
                                 modifier = Modifier.size(40.dp))
                         }
                     }
-                    IconButton(enabled = seekable, onClick = { player.seekForward(); interactionVersion++ }) {
+                    IconButton(enabled = fullControlsInteractive && seekable, onClick = { player.seekForward(); interactionVersion++ }) {
                         Icon(Icons.Outlined.Forward10, "Tiến 10 giây", tint = Color.White)
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = { onToggleFullscreen(); interactionVersion++ }) {
+                IconButton(enabled = fullControlsInteractive, onClick = { onToggleFullscreen(); interactionVersion++ }) {
                     Icon(
                         if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
                         if (fullscreen) "Thoát toàn màn hình" else "Toàn màn hình",
@@ -575,22 +689,6 @@ internal fun MediaViewer(
                     )
                 }
             }
-            Slider(
-                value = if (dragging) scrubPosition else position.toFloat().coerceIn(0f, duration.toFloat()),
-                onValueChange = { dragging = true; scrubPosition = it; interactionVersion++ },
-                onValueChangeFinished = {
-                    player.seekTo(scrubPosition.toLong().coerceIn(0L, duration))
-                    dragging = false
-                },
-                valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
-                enabled = seekable && duration > 0,
-                modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Tiến độ phát" }
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(mediaTime(if (dragging) scrubPosition.toLong() else position), color = Color.White)
-                Text(mediaTime(duration), color = Color.White)
-            }
-
         }
     }
 }
