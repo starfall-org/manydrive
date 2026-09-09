@@ -1,5 +1,7 @@
 package com.starfall.gsadrive.ui
 
+import com.starfall.gsadrive.tr
+
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -31,7 +33,7 @@ internal fun CopyableError(
             Text(text, color = color, style = style)
         }
         IconButton(onClick = { clipboard.setText(AnnotatedString(text)) }) {
-            Icon(Icons.Outlined.ContentCopy, "Sao chép thông báo", tint = color)
+            Icon(Icons.Outlined.ContentCopy, tr("Sao chép thông báo"), tint = color)
         }
     }
 }

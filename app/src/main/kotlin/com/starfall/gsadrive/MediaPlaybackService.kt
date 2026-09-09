@@ -109,7 +109,7 @@ object PlaybackSourceRegistry {
 
     @Throws(IOException::class)
     fun resolve(mediaId: String): File {
-        val source = sources[mediaId] ?: throw IOException("Không tìm thấy nguồn media: $mediaId")
+        val source = sources[mediaId] ?: throw IOException(tr("Không tìm thấy nguồn media: $mediaId"))
         if (source.cacheFile.isFile && source.cacheFile.length() > 0L) return source.cacheFile
 
         val lock = locks.getOrPut(mediaId) { Any() }
@@ -123,17 +123,17 @@ object PlaybackSourceRegistry {
                 when (source.accountType) {
                     "S3" -> runBlocking {
                         S3Api.downloadTo(
-                            source.s3Config ?: throw IOException("Thiếu cấu hình S3 cho media."),
+                            source.s3Config ?: throw IOException(tr("Thiếu cấu hình S3 cho media.")),
                             source.file.id,
                             temporary
                         )
                     }
                     "GOOGLE", "SERVICE" -> DriveApi.downloadTo(
-                        source.accessToken ?: throw IOException("Thiếu quyền truy cập media."),
+                        source.accessToken ?: throw IOException(tr("Thiếu quyền truy cập media.")),
                         source.file.id,
                         temporary
                     )
-                    else -> throw IOException("Loại tài khoản không hỗ trợ phát media.")
+                    else -> throw IOException(tr("Loại tài khoản không hỗ trợ phát media."))
                 }
                 if (!temporary.renameTo(target)) {
                     temporary.copyTo(target, overwrite = true)
@@ -143,7 +143,7 @@ object PlaybackSourceRegistry {
             } catch (t: Throwable) {
                 temporary.delete()
                 if (t is IOException) throw t
-                throw IOException(t.message ?: "Không thể tải media.", t)
+                throw IOException(t.message ?: tr("Không thể tải media."), t)
             }
         }
     }
@@ -161,12 +161,12 @@ private class ManyDriveMediaDataSource : BaseDataSource(false) {
         transferInitializing(dataSpec)
         currentUri = dataSpec.uri
         val mediaId = dataSpec.uri.getQueryParameter("id")
-            ?: throw IOException("Media URI không hợp lệ.")
+            ?: throw IOException(tr("Media URI không hợp lệ."))
         val resolved = PlaybackSourceRegistry.resolve(mediaId)
         val handle = RandomAccessFile(resolved, "r")
         if (dataSpec.position > handle.length()) {
             handle.close()
-            throw IOException("Vị trí đọc media vượt quá kích thước tệp.")
+            throw IOException(tr("Vị trí đọc media vượt quá kích thước tệp."))
         }
         handle.seek(dataSpec.position)
         file = handle
@@ -247,14 +247,14 @@ private class ManyDriveArtworkBitmapLoader : BitmapLoader {
 
     override fun decodeBitmap(data: ByteArray): ListenableFuture<Bitmap> = executor.submit(Callable {
         BitmapFactory.decodeByteArray(data, 0, data.size)
-            ?: throw IOException("Không thể giải mã artwork")
+            ?: throw IOException(tr("Không thể giải mã artwork"))
     })
 
     override fun loadBitmap(uri: Uri): ListenableFuture<Bitmap> = executor.submit(Callable {
-        if (uri.scheme != "manydrive-artwork") throw IOException("Artwork URI không được hỗ trợ: $uri")
-        val mediaId = uri.getQueryParameter("id") ?: throw IOException("Artwork thiếu media id")
-        val source = PlaybackSourceRegistry.get(mediaId) ?: throw IOException("Không tìm thấy nguồn artwork")
-        val thumbnailUrl = source.file.thumbnailUrl ?: throw IOException("Media không có thumbnail")
+        if (uri.scheme != "manydrive-artwork") throw IOException(tr("Artwork URI không được hỗ trợ: $uri"))
+        val mediaId = uri.getQueryParameter("id") ?: throw IOException(tr("Artwork thiếu media id"))
+        val source = PlaybackSourceRegistry.get(mediaId) ?: throw IOException(tr("Không tìm thấy nguồn artwork"))
+        val thumbnailUrl = source.file.thumbnailUrl ?: throw IOException(tr("Media không có thumbnail"))
         ThumbnailRepository.load(thumbnailUrl, source.accessToken)
     })
 
@@ -290,7 +290,7 @@ private class FixedTransportNotificationProvider(context: Context) : MediaNotifi
             if (player.playWhenReady && player.playbackState != Player.STATE_ENDED)
                 CommandButton.ICON_PAUSE else CommandButton.ICON_PLAY
         )
-            .setDisplayName(if (player.playWhenReady && player.playbackState != Player.STATE_ENDED) "Tạm dừng" else "Phát")
+            .setDisplayName(if (player.playWhenReady && player.playbackState != Player.STATE_ENDED) tr("Tạm dừng") else tr("Phát"))
             .setPlayerCommand(Player.COMMAND_PLAY_PAUSE)
             .setSlots(CommandButton.SLOT_CENTRAL)
             .build()

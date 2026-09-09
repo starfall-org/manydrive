@@ -53,13 +53,13 @@ internal fun AccountSwitcherDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "Tài khoản",
+                            tr("Tài khoản"),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f)
                         )
                         IconButton(onClick = onDismiss, enabled = !accounts.busy) {
-                            Icon(Icons.Outlined.Close, "Đóng")
+                            Icon(Icons.Outlined.Close, tr("Đóng"))
                         }
                     }
 
@@ -78,7 +78,7 @@ internal fun AccountSwitcherDialog(
                     val ordered = accounts.entries.sortedByDescending { it.key == active?.key }
                     if (ordered.isEmpty()) {
                         Box(Modifier.fillMaxWidth().weight(1f).padding(32.dp), contentAlignment = Alignment.Center) {
-                            Text("Chưa có tài khoản.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(tr("Chưa có tài khoản."), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     } else {
                         LazyColumn(modifier = Modifier.weight(1f)) {
@@ -112,7 +112,7 @@ internal fun AccountSwitcherDialog(
                             }
                         }
                         Spacer(Modifier.width(18.dp))
-                        Text("Thêm tài khoản khác", style = MaterialTheme.typography.titleMedium)
+                        Text(tr("Thêm tài khoản khác"), style = MaterialTheme.typography.titleMedium)
                     }
                 }
             }
@@ -173,7 +173,7 @@ private fun AccountSwitcherRow(
         }
 
         IconButton(onClick = onRemove, enabled = enabled) {
-            Icon(Icons.AutoMirrored.Outlined.Logout, "Đăng xuất khỏi ${entry.title}")
+            Icon(Icons.AutoMirrored.Outlined.Logout, tr("Đăng xuất khỏi ${entry.title}"))
         }
     }
 }

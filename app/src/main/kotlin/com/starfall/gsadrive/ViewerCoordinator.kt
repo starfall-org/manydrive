@@ -81,7 +81,8 @@ internal class ViewerCoordinator(
     fun open(file: DriveFile, minimized: Boolean = false, swipeQueue: List<DriveFile>? = null) {
         if (file.isFolder) return
         if (!isPreviewable(file)) {
-            Toast.makeText(context, "Chưa hỗ trợ xem loại tệp ${file.mimeType.ifBlank { "này" }}", Toast.LENGTH_SHORT).show()
+            val type = file.mimeType.ifBlank { tr("này") }
+            Toast.makeText(context, tr("Chưa hỗ trợ xem loại tệp $type"), Toast.LENGTH_SHORT).show()
             return
         }
         val account = activeAccount() ?: return
@@ -137,7 +138,7 @@ internal class ViewerCoordinator(
                     }
                     val text = if (isTextPreview(file)) {
                         require(target.length() <= MAX_TEXT_PREVIEW_BYTES) {
-                            "Tệp text quá lớn để sửa trực tiếp (giới hạn 4 MB)."
+                            tr("Tệp text quá lớn để sửa trực tiếp (giới hạn 4 MB).")
                         }
                         target.readText(Charsets.UTF_8)
                     } else null
@@ -156,7 +157,7 @@ internal class ViewerCoordinator(
                 }
             }.onFailure {
                 if (request == generation && state?.file?.id == file.id) {
-                    state = state?.copy(loading = false, error = it.message ?: "Không thể mở tệp.")
+                    state = state?.copy(loading = false, error = it.message ?: tr("Không thể mở tệp."))
                 }
             }
         }
@@ -175,11 +176,11 @@ internal class ViewerCoordinator(
         val config = if (account.type == AccountType.S3) s3Config(account) else null
         val token = if (account.type == AccountType.S3) null else accessToken()
         if (account.type != AccountType.S3 && token == null) {
-            state = ViewerState(file = file, error = "Cần cấp quyền truy cập trước khi phát media.")
+            state = ViewerState(file = file, error = tr("Cần cấp quyền truy cập trước khi phát media."))
             return
         }
         if (account.type == AccountType.S3 && config == null) {
-            state = ViewerState(file = file, error = "Không tìm thấy cấu hình S3.")
+            state = ViewerState(file = file, error = tr("Không tìm thấy cấu hình S3."))
             return
         }
 
@@ -227,7 +228,7 @@ internal class ViewerCoordinator(
                 }
             }.onFailure {
                 if (request == generation && state?.file?.id == file.id) {
-                    state = state?.copy(error = it.message ?: "Không thể mở media.")
+                    state = state?.copy(error = it.message ?: tr("Không thể mở media."))
                 }
             }
         }
@@ -288,7 +289,7 @@ internal class ViewerCoordinator(
         val account = activeAccount() ?: return
         val content = text.toByteArray(Charsets.UTF_8)
         if (content.size > MAX_TEXT_PREVIEW_BYTES) {
-            Toast.makeText(context, "Nội dung vượt giới hạn 4 MB.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, tr("Nội dung vượt giới hạn 4 MB."), Toast.LENGTH_SHORT).show()
             return
         }
         val request = generation
@@ -298,7 +299,7 @@ internal class ViewerCoordinator(
                 withContext(Dispatchers.IO) {
                     when (account.type) {
                         AccountType.S3 -> {
-                            val config = s3Config(account) ?: error("Không tìm thấy cấu hình S3.")
+                            val config = s3Config(account) ?: error(tr("Không tìm thấy cấu hình S3."))
                             val temporary = File.createTempFile("manydrive-text-", ".tmp", context.cacheDir)
                             try {
                                 temporary.writeBytes(content)
@@ -309,7 +310,7 @@ internal class ViewerCoordinator(
                             }
                         }
                         AccountType.GOOGLE, AccountType.SERVICE -> {
-                            val token = accessToken() ?: error("Cần cấp quyền ghi trước khi lưu.")
+                            val token = accessToken() ?: error(tr("Cần cấp quyền ghi trước khi lưu."))
                             DriveApi.updateContent(token, current.file.id,
                                 current.file.mimeType.ifBlank { "text/plain; charset=UTF-8" }, content)
                         }
@@ -321,7 +322,7 @@ internal class ViewerCoordinator(
             if (request == generation && state?.file?.id == current.file.id) {
                 state = state?.copy(saving = false, error = result.exceptionOrNull()?.message)
                 Toast.makeText(context,
-                    if (result.isSuccess) "Đã lưu thay đổi." else "Không thể lưu thay đổi.",
+                    if (result.isSuccess) tr("Đã lưu thay đổi.") else tr("Không thể lưu thay đổi."),
                     Toast.LENGTH_SHORT).show()
             }
         }
@@ -333,9 +334,9 @@ internal class ViewerCoordinator(
         temporary.delete()
         when (account.type) {
             AccountType.S3 -> S3Api.downloadTo(
-                s3Config(account) ?: error("Không tìm thấy cấu hình S3."), file.id, temporary)
+                s3Config(account) ?: error(tr("Không tìm thấy cấu hình S3.")), file.id, temporary)
             AccountType.GOOGLE, AccountType.SERVICE -> DriveApi.downloadTo(
-                accessToken() ?: error("Cần cấp quyền truy cập trước khi mở tệp."), file.id, temporary)
+                accessToken() ?: error(tr("Cần cấp quyền truy cập trước khi mở tệp.")), file.id, temporary)
         }
         if (!temporary.renameTo(target)) {
             temporary.copyTo(target, overwrite = true)
