@@ -67,7 +67,8 @@ internal fun ExpandableMediaPlayer(
     index: Int,
     previewPaths: Map<String, String>,
     error: String? = null,
-    onSwipeTo: (Int) -> Unit
+    onSwipeTo: (Int) -> Unit,
+    closeOnBack: Boolean = false
 ) {
     var fullscreen by remember { mutableStateOf(false) }
     var landscapeVideo by remember(player) {
@@ -87,7 +88,7 @@ internal fun ExpandableMediaPlayer(
     }
 
     BackHandler(enabled = !minimized) {
-        if (fullscreen) fullscreen = false else onMinimize()
+        if (fullscreen && !closeOnBack) fullscreen = false else onMinimize()
     }
 
     DisposableEffect(player) {

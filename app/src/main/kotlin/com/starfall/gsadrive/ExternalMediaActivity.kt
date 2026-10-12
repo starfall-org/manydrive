@@ -65,6 +65,7 @@ class ExternalMediaActivity : ComponentActivity() {
     private var playbackStartedFor: String? = null
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var notificationPermissionPending = false
+    private var closing = false
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -96,7 +97,7 @@ class ExternalMediaActivity : ComponentActivity() {
                     loading = loading,
                     error = error,
                     player = playback,
-                    onBack = ::finish
+                    onBack = ::closeExternalPlayback
                 )
             }
         }
@@ -141,6 +142,10 @@ class ExternalMediaActivity : ComponentActivity() {
             future.addListener({
                 runCatching { future.get() }
                     .onSuccess { controller ->
+                        if (closing) {
+                            controller.release()
+                            return@onSuccess
+                        }
                         playback = controller
                         maybeStartPlayback()
                     }
@@ -154,6 +159,7 @@ class ExternalMediaActivity : ComponentActivity() {
     }
 
     private fun maybeStartPlayback() {
+        if (closing) return
         val selected = file ?: return
         if (!isMediaPreview(selected) || playbackStartedFor == selected.id) return
         val controller = playback ?: return
@@ -168,6 +174,24 @@ class ExternalMediaActivity : ComponentActivity() {
                 loading = false
                 error = it.message ?: tr("Cannot open media.")
             }
+    }
+
+    /**
+     * Back closes an externally opened player and stops its service session. Home is deliberately
+     * not handled here: leaving this Activity lets MediaPlaybackService continue in the background.
+     */
+    private fun closeExternalPlayback() {
+        if (closing) return
+        closing = true
+        if (sources != null) {
+            playback?.let { controller ->
+                runCatching { controller.stop() }
+                runCatching { controller.clearMediaItems() }
+            }
+            PlaybackProgress.clear(this)
+            PlaybackSourceRegistry.clear()
+        }
+        finish()
     }
 
     private fun resolveFile(uri: Uri, declaredType: String?): DriveFile {
@@ -256,6 +280,7 @@ private fun ExternalMediaScreen(
             onMinimize = onBack,
             onExpand = {},
             onClose = onBack,
+            closeOnBack = true,
             queue = listOf(file),
             index = 0,
             previewPaths = emptyMap(),
