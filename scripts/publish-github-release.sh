@@ -50,29 +50,23 @@ resolve_exact_tag_commit() {
   printf '%s\n' "$object_sha"
 }
 
-# Keep the tag attached to the binaries that this build actually produced.
-# Updating a tag ref to a commit also handles a previous annotated tag.
+# Reuse an existing tag/release without moving a potentially protected Git ref.
 if existing_commit="$(resolve_exact_tag_commit "$tag")"; then
   if [[ "$existing_commit" != "$commit" ]]; then
-    gh api --method PATCH "repos/$repo/git/refs/tags/$tag" \
-      -f sha="$commit" -F force=true >/dev/null
-    [[ "$(resolve_exact_tag_commit "$tag")" == "$commit" ]] || {
-      echo "Failed to move tag $tag to $commit." >&2
-      exit 1
-    }
-    echo "Moved $tag from $existing_commit to $commit"
+    echo "Warning: Existing tag $tag points to $existing_commit (build: $commit); leaving tag unchanged." >&2
   fi
 else
   tag_status=$?
-  if (( tag_status != 1 )) || gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
-    echo "Release $tag exists or its tag could not be resolved." >&2
+  if (( tag_status != 1 )); then
+    echo "Could not resolve release tag $tag." >&2
     exit 1
   fi
 fi
 
 if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
-  gh release edit "$tag" --repo "$repo" --target "$commit"
+  echo "Reusing GitHub release $tag; replacing matching assets."
 else
+  # Existing Git tags are reused; --target only applies when a tag is created.
   gh release create "$tag" --repo "$repo" --target "$commit" \
     --title "ManyDrive $version" --generate-notes --draft
 fi

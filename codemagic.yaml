@@ -10,6 +10,13 @@ workflows:
       - name: Set up Android SDK
         script: |
           printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
+      - name: Fetch full Git history for versioning
+        ignore_failure: false
+        script: |
+          set -euo pipefail
+          if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+            git fetch --unshallow --no-tags origin
+          fi
       - name: Build debug APK
         script: |
           chmod +x gradlew
@@ -56,7 +63,14 @@ workflows:
             brew install gh --quiet
           fi
           gh --version >/dev/null
-      - name: Build ABI-specific release APKs
+      - name: Fetch full Git history for versioning
+        ignore_failure: false
+        script: |
+          set -euo pipefail
+          if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+            git fetch --unshallow --no-tags origin
+          fi
+      - name: Build universal release APK
         ignore_failure: false
         script: |
           set -euo pipefail
@@ -75,7 +89,7 @@ workflows:
           fi
           printf 'MANYDRIVE_RELEASE_TAG=%s\n' "$tag" >> "$CM_ENV"
           echo "Publishing $tag from $(git rev-parse HEAD)"
-      - name: Move tag to build commit and replace GitHub release APKs
+      - name: Reuse tag and replace GitHub release APKs
         ignore_failure: false
         script: |
           set -euo pipefail

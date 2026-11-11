@@ -5,6 +5,15 @@ plugins {
     id("com.google.gms.google-services")
 }
 
+// Count Git commits from the full history to derive Android versions.
+val gitCommitCount = providers.exec {
+    commandLine("git", "rev-list", "--count", "HEAD")
+    workingDir(rootProject.projectDir)
+}.standardOutput.asText.map { output ->
+    output.trim().toIntOrNull()?.takeIf { it > 0 }
+        ?: throw GradleException("Could not determine Git commit count: '$output'")
+}.get()
+
 android {
     namespace = "com.starfall.gsadrive"
     compileSdk = 36
@@ -24,18 +33,9 @@ android {
         applicationId = "com.starfall.gsadrive"
         minSdk = 24
         targetSdk = 35
-        versionCode = 26
-        versionName = "3.0.10"
+        versionCode = gitCommitCount
+        versionName = "1.0.$gitCommitCount"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
-            isUniversalApk = true
-        }
     }
 
     packaging {

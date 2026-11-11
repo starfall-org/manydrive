@@ -27,17 +27,17 @@ internal fun FolderZoomTransition(
         targetState = FolderTransitionTarget(key, depth),
         transitionSpec = {
             val openingFolder = targetState.depth >= initialState.depth
-            val enterScale = if (openingFolder) 0.94f else 1.04f
-            val exitScale = if (openingFolder) 1.04f else 0.94f
+            val enterScale = if (openingFolder) 0.98f else 1.02f
+            val exitScale = if (openingFolder) 1.02f else 0.98f
 
             (scaleIn(
                 initialScale = enterScale,
-                animationSpec = tween(150, easing = FastOutSlowInEasing)
-            ) + fadeIn(tween(90))).togetherWith(
+                animationSpec = tween(320, easing = FastOutSlowInEasing)
+            ) + fadeIn(tween(320, easing = FastOutSlowInEasing))).togetherWith(
                 scaleOut(
                     targetScale = exitScale,
-                    animationSpec = tween(120, easing = FastOutSlowInEasing)
-                ) + fadeOut(tween(90))
+                    animationSpec = tween(320, easing = FastOutSlowInEasing)
+                ) + fadeOut(tween(320, easing = FastOutSlowInEasing))
             )
         },
         modifier = modifier,
