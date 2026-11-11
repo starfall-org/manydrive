@@ -25,6 +25,7 @@ import androidx.core.content.FileProvider
 import com.starfall.gsadrive.data.DriveFile
 import com.starfall.gsadrive.data.LocalFileAccess
 import com.starfall.gsadrive.feature.accounts.AccountEntry
+import com.starfall.gsadrive.shared.operations.ioResult
 import com.starfall.gsadrive.shared.i18n.localized
 import java.io.File
 import java.util.zip.ZipEntry
@@ -66,7 +67,7 @@ internal fun LocalFileActions(
     var destinationValid by remember { mutableStateOf(false) }
     LaunchedEffect(mode) {
         if (mode == "info" && file.isFolder) {
-            val result = withContext(Dispatchers.IO) { runCatching { access.tree(file.id).filter { it.isFile }.sumOf { it.length() } } }
+            val result = ioResult { access.tree(file.id).filter { it.isFile }.sumOf { it.length() } }
             totalSize = result.getOrNull()
             error = result.exceptionOrNull()?.message
         }
@@ -74,7 +75,7 @@ internal fun LocalFileActions(
     LaunchedEffect(destination, mode, destinationScope) {
         if (mode !in listOf("copy", "move") || destinationScope != "system") return@LaunchedEffect
         foldersLoading = true; destinationValid = false; error = null
-        val result = withContext(Dispatchers.IO) { runCatching { access.list(destination).filter { it.isDirectory } } }
+        val result = ioResult { access.list(destination).filter { it.isDirectory } }
         folders = result.getOrDefault(emptyList())
         error = result.exceptionOrNull()?.message
         destinationValid = result.isSuccess
@@ -95,7 +96,7 @@ internal fun LocalFileActions(
     fun perform(operation: () -> Unit) {
         busy = true; error = null
         scope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching(operation) }
+            val result = ioResult { operation() }
             busy = false
             onChanged()
             if (result.isSuccess) onDismiss() else error = result.exceptionOrNull()?.message

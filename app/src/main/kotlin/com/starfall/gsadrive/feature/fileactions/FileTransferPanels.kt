@@ -23,11 +23,10 @@ import com.starfall.gsadrive.data.LocalFileAccess
 import com.starfall.gsadrive.feature.accounts.AccountEntry
 import com.starfall.gsadrive.feature.accounts.AccountType
 import com.starfall.gsadrive.feature.photos.PhotosFolderUploadMode
+import com.starfall.gsadrive.shared.operations.ioResult
 import com.starfall.gsadrive.shared.i18n.localized
 import com.starfall.gsadrive.shared.ui.CopyableError
 import java.io.File
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 @Composable
 internal fun TransferPanel(
@@ -74,9 +73,7 @@ internal fun TransferPanel(
         localLoading = true
         localValid = false
         error = null
-        val result = withContext(Dispatchers.IO) {
-            runCatching { LocalFileAccess(File(localRoot)).list(localDestination).filter { it.isDirectory } }
-        }
+        val result = ioResult { LocalFileAccess(File(localRoot)).list(localDestination).filter { it.isDirectory } }
         localFolders = result.getOrDefault(emptyList())
         localValid = result.isSuccess
         error = result.exceptionOrNull()?.message
@@ -129,17 +126,12 @@ internal fun TransferPanel(
             }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, localized(R.string.back)) }
             Text(cloudPath.lastOrNull()?.name ?: account.title, Modifier.weight(1f), maxLines = 1)
         }
-        LazyColumn(Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 380.dp)) {
-            items(cloudFolders, key = { it.id }) { folder ->
-                ListItem(
-                    headlineContent = { Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    leadingContent = { Icon(Icons.Outlined.Folder, null) },
-                    modifier = Modifier.clickable(enabled = !transferring && !cloudLoading) {
-                        cloudPath = cloudPath + folder
-                        loadCloud(folder.id)
-                    }
-                )
-            }
+        DestinationFolderList(
+            folders = cloudFolders, key = { it.id }, name = { it.name },
+            enabled = !transferring && !cloudLoading
+        ) { folder ->
+            cloudPath = cloudPath + folder
+            loadCloud(folder.id)
         }
         Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.End) {
             Button(enabled = !transferring && !cloudLoading && cloudValid, onClick = {
@@ -164,16 +156,11 @@ internal fun TransferPanel(
             ) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, localized(R.string.back)) }
             Text(localDestination, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        LazyColumn(Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 380.dp)) {
-            items(localFolders, key = { it.path }) { folder ->
-                ListItem(
-                    headlineContent = { Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    leadingContent = { Icon(Icons.Outlined.Folder, null) },
-                    modifier = Modifier.clickable(enabled = !transferring && !localLoading) {
-                        localDestination = folder.path
-                    }
-                )
-            }
+        DestinationFolderList(
+            folders = localFolders, key = { it.path }, name = { it.name },
+            enabled = !transferring && !localLoading
+        ) { folder ->
+            localDestination = folder.path
         }
         Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.End) {
             Button(enabled = !transferring && !localLoading && localValid, onClick = {
@@ -292,17 +279,12 @@ internal fun MoveManyPanel(
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
         )
     }
-    LazyColumn(Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 380.dp)) {
-        items(folders, key = { it.id }) { folder ->
-            ListItem(
-                headlineContent = { Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                leadingContent = { Icon(Icons.Outlined.Folder, null) },
-                modifier = Modifier.clickable(enabled = !loading && !moving) {
-                    path = path + folder
-                    load(folder.id)
-                }
-            )
-        }
+    DestinationFolderList(
+        folders = folders, key = { it.id }, name = { it.name },
+        enabled = !loading && !moving
+    ) { folder ->
+        path = path + folder
+        load(folder.id)
     }
     Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.End) {
         Button(enabled = !loading && !moving, onClick = {
@@ -315,5 +297,25 @@ internal fun MoveManyPanel(
                     .onFailure { error = it.message ?: localized(R.string.selected_items_cannot_be_moved) }
             }
         }) { Text(localized(R.string.move_here)) }
+    }
+}
+
+/** One destination-list presentation for single/multiple selection and local/cloud folders. */
+@Composable
+private fun <T> DestinationFolderList(
+    folders: List<T>,
+    key: (T) -> String,
+    name: (T) -> String,
+    enabled: Boolean,
+    onOpen: (T) -> Unit
+) {
+    LazyColumn(Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 380.dp)) {
+        items(folders, key = key) { folder ->
+            ListItem(
+                headlineContent = { Text(name(folder), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                leadingContent = { Icon(Icons.Outlined.Folder, null) },
+                modifier = Modifier.clickable(enabled = enabled) { onOpen(folder) }
+            )
+        }
     }
 }

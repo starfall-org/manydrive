@@ -13,7 +13,9 @@ import com.starfall.gsadrive.feature.accounts.AccountType
 import com.starfall.gsadrive.feature.viewer.playback.pruneVideoFileCache
 import com.starfall.gsadrive.shared.i18n.localized
 import java.io.File
-import java.security.MessageDigest
+import com.starfall.gsadrive.shared.cache.cacheKeyHash
+import com.starfall.gsadrive.shared.cache.trimFileCache
+import com.starfall.gsadrive.shared.cache.writeCacheFile
 
 /** Preview IO and on-disk cache policy; viewer state remains in ViewerCoordinator. */
 internal class PreviewFiles(
@@ -23,21 +25,16 @@ internal class PreviewFiles(
     private val s3Config: (AccountEntry) -> S3Config?
 ) {
     suspend fun downloadPreview(account: AccountEntry, file: DriveFile, target: File) {
-        val temporary = File(target.path + ".tmp")
-        temporary.parentFile?.mkdirs()
-        temporary.delete()
-        if (file.photosMediaId != null) {
-            com.starfall.gsadrive.data.PhotosApi.downloadImage(
-                photosTokenProvider(account.key)?.invoke() ?: error(localized(R.string.google_photos_authorization_is_required)), file.photosMediaId, temporary)
-        } else when (account.type) {
-            AccountType.S3 -> S3Api.downloadTo(
-                s3Config(account) ?: error(localized(R.string.s3_configuration_not_found)), file.id, temporary)
-            AccountType.GOOGLE, AccountType.SERVICE -> DriveApi.downloadTo(
-                accessToken() ?: error(localized(R.string.access_permissions_need_to_be_granted_before_opening_the_file)), file.id, temporary)
-        }
-        if (!temporary.renameTo(target)) {
-            temporary.copyTo(target, overwrite = true)
-            temporary.delete()
+        writeCacheFile(target) { temporary ->
+            if (file.photosMediaId != null) {
+                com.starfall.gsadrive.data.PhotosApi.downloadImage(
+                    photosTokenProvider(account.key)?.invoke() ?: error(localized(R.string.google_photos_authorization_is_required)), file.photosMediaId, temporary)
+            } else when (account.type) {
+                AccountType.S3 -> S3Api.downloadTo(
+                    s3Config(account) ?: error(localized(R.string.s3_configuration_not_found)), file.id, temporary)
+                AccountType.GOOGLE, AccountType.SERVICE -> DriveApi.downloadTo(
+                    accessToken() ?: error(localized(R.string.access_permissions_need_to_be_granted_before_opening_the_file)), file.id, temporary)
+            }
         }
     }
 
@@ -49,8 +46,7 @@ internal class PreviewFiles(
 
     fun previewCacheFile(account: String, file: DriveFile): File {
         val seed = "$account|${file.id}|${file.modifiedTime.orEmpty()}|${file.size ?: -1L}"
-        val hash = MessageDigest.getInstance("SHA-256")
-            .digest(seed.toByteArray()).joinToString("") { "%02x".format(it) }
+        val hash = cacheKeyHash(seed)
         val extension = file.name.substringAfterLast('.', "").lowercase()
             .takeIf { it.matches(Regex("[a-z0-9]{1,8}")) }?.let { ".$it" }.orEmpty()
         val directory = if (file.mimeType.startsWith("video/")) {
@@ -63,12 +59,10 @@ internal class PreviewFiles(
 
     fun prunePreviewCache() {
         val directory = File(context.cacheDir, "viewer")
-        var total = 0L
-        directory.listFiles()?.filter { it.isFile && !it.name.endsWith(".tmp") }
-            ?.sortedByDescending { it.lastModified() }?.forEach { file ->
-                total += file.length()
-                if (total > MAX_PREVIEW_CACHE_BYTES) file.delete()
-            }
+        trimFileCache(
+            directory.listFiles().orEmpty().filter { it.isFile && !it.name.endsWith(".tmp") },
+            MAX_PREVIEW_CACHE_BYTES
+        )
         pruneVideoFileCache(File(context.filesDir, "video-file-cache"))
     }
 }

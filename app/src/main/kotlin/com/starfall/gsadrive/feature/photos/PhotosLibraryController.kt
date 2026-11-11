@@ -14,6 +14,7 @@ import com.starfall.gsadrive.data.FileListCache
 import com.starfall.gsadrive.data.PhotosApi
 import com.starfall.gsadrive.feature.accounts.AccountEntry
 import com.starfall.gsadrive.feature.accounts.AccountType
+import com.starfall.gsadrive.shared.operations.ioResult
 import com.starfall.gsadrive.shared.i18n.localized
 import com.starfall.gsadrive.shared.model.Model
 import java.io.File
@@ -127,7 +128,7 @@ internal class PhotosLibraryController(
         tokenAccount = request.first
         token = value
         activity.lifecycleScope.launch {
-            val result = runCatching { withContext(Dispatchers.IO) { PhotosApi.list(value) } }
+            val result = ioResult { PhotosApi.list(value) }
             if (!current(request)) return@launch
             result.onSuccess { files ->
                 publish(request.first, snapshot.copy(files = files, loading = false, message = null))

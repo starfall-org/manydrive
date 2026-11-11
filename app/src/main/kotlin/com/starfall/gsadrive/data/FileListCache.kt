@@ -3,14 +3,14 @@ package com.starfall.gsadrive.data
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.security.MessageDigest
+import com.starfall.gsadrive.shared.cache.cacheKeyHash
+import com.starfall.gsadrive.shared.cache.trimFileCache
+import com.starfall.gsadrive.shared.cache.writeCacheFile
 
 /** Disposable metadata only: isolated by account, tab and parent folder. */
 class FileListCache(private val directory: File) {
-    private fun hash(value: String) = MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
-    private fun accountDirectory(account: String) = File(directory, hash(account))
-    private fun file(account: String, location: String) = File(accountDirectory(account), hash(location) + ".json")
+    private fun accountDirectory(account: String) = File(directory, cacheKeyHash(account))
+    private fun file(account: String, location: String) = File(accountDirectory(account), cacheKeyHash(location) + ".json")
 
     @Synchronized fun read(account: String, location: String): List<DriveFile>? = runCatching {
         val file = file(account, location)
@@ -38,14 +38,10 @@ class FileListCache(private val directory: File) {
                 .put("size", item.size).put("thumbnailUrl", item.thumbnailUrl).put("webViewUrl", item.webViewUrl)
                 .put("parents", JSONArray(item.parents)).put("trashed", item.trashed)
                 .put("sharedWithMeTime", item.sharedWithMeTime)) }
-            val temporary = File(target.path + ".tmp")
-            temporary.writeText(JSONObject().put("version", 2).put("files", values).toString())
-            check(temporary.renameTo(target))
-            var bytes = 0L
-            directory.walkTopDown().filter { it.isFile }.sortedByDescending { it.lastModified() }.forEach {
-                bytes += it.length()
-                if (bytes > 20 * 1024 * 1024) it.delete()
+            writeCacheFile(target) { temporary ->
+                temporary.writeText(JSONObject().put("version", 2).put("files", values).toString())
             }
+            trimFileCache(directory.walkTopDown().filter { it.isFile }.asIterable(), 20L * 1024L * 1024L)
         }
     }
 

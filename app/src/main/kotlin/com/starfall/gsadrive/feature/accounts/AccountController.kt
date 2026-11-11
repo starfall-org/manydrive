@@ -21,6 +21,7 @@ import com.starfall.gsadrive.data.ServiceAccessToken
 import com.starfall.gsadrive.data.ServiceAccountApi
 import com.starfall.gsadrive.data.ServiceAccountCredentials
 import com.starfall.gsadrive.data.ServiceAccountStore
+import com.starfall.gsadrive.shared.operations.ioResult
 import com.starfall.gsadrive.shared.i18n.localized
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -93,7 +94,7 @@ internal class AccountController(
         val entry = ui.active ?: return
         if (entry.type == AccountType.S3 || selection.getBoolean("profile:${entry.key}", false)) return
         scope.launch {
-            val profile = withContext(Dispatchers.IO) { runCatching { DriveApi.accountProfile(token) }.getOrNull() }
+            val profile = ioResult { DriveApi.accountProfile(token) }.getOrNull()
                 ?: return@launch
             if (ui.entries.none { it.key == entry.key }) return@launch
             val name = profile.displayName?.takeIf { it.isNotBlank() && '@' !in it }
@@ -116,7 +117,7 @@ internal class AccountController(
         val account = S3Account(name = name.trim(), config = config)
         ui = ui.copy(busy = true, message = null)
         scope.launch {
-            runCatching { withContext(Dispatchers.IO) { S3Api.list(config) } }
+            ioResult { S3Api.list(config) }
                 .onSuccess { files ->
                     val saved = s3Accounts.copy(accounts = s3Accounts.accounts + account, activeId = account.id)
                     runCatching { s3Store.save(saved) }
@@ -133,23 +134,21 @@ internal class AccountController(
         if (!serviceAvailable) return accountError(localized(R.string.unable_to_open_service_account_repository_on_the_device))
         ui = ui.copy(busy = true, message = null)
         scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    val text = context.contentResolver.openInputStream(uri)?.use { input ->
-                        val output = java.io.ByteArrayOutputStream()
-                        val buffer = ByteArray(4096)
-                        while (true) {
-                            val count = input.read(buffer)
-                            if (count < 0) break
-                            require(output.size() + count <= ServiceAccountCredentials.MAX_JSON_BYTES) { localized(R.string.json_file_is_too_large) }
-                            output.write(buffer, 0, count)
-                        }
-                        output.toString("UTF-8")
-                    } ?: throw IllegalArgumentException(localized(R.string.cannot_read_the_selected_json_file))
-                    val credentials = ServiceAccountCredentials.parse(text)
-                    val token = ServiceAccountApi.accessToken(credentials)
-                    Triple(credentials, token, DriveApi.listFiles(token.value))
-                }
+            ioResult {
+                val text = context.contentResolver.openInputStream(uri)?.use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(4096)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        require(output.size() + count <= ServiceAccountCredentials.MAX_JSON_BYTES) { localized(R.string.json_file_is_too_large) }
+                        output.write(buffer, 0, count)
+                    }
+                    output.toString("UTF-8")
+                } ?: throw IllegalArgumentException(localized(R.string.cannot_read_the_selected_json_file))
+                val credentials = ServiceAccountCredentials.parse(text)
+                val token = ServiceAccountApi.accessToken(credentials)
+                Triple(credentials, token, DriveApi.listFiles(token.value))
             }.onSuccess { (credentials, token, files) ->
                 val saved = serviceAccounts.filterNot { it.id == credentials.id } + credentials
                 runCatching { serviceStore.save(saved) }

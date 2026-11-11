@@ -9,8 +9,9 @@ import com.starfall.gsadrive.data.S3Api
 import com.starfall.gsadrive.feature.accounts.AccountType
 import com.starfall.gsadrive.feature.accounts.StorageSession
 import com.starfall.gsadrive.feature.browser.BrowserController
+import com.starfall.gsadrive.shared.operations.runFileBatch
+import com.starfall.gsadrive.shared.operations.ioResult
 import com.starfall.gsadrive.shared.i18n.localized
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -56,13 +57,10 @@ internal class ListingMutations(
         val request = ++generation
         browser.model = browser.model.copy(loading = true, message = null)
         scope.launch {
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    try { unique.forEach { file -> action(token, file) } }
-                    finally { listingCache.clear(account.key) }
-                }
+            val result = ioResult {
+                try { unique.forEach { file -> action(token, file) } }
+                finally { listingCache.clear(account.key) }
             }
-            result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
             if (request != generation) return@launch
             result.onSuccess { browser.refresh(forceNetwork = true) }
                 .onFailure { browser.model = browser.model.copy(loading = false, message = failureMessage) }
@@ -77,9 +75,9 @@ internal class ListingMutations(
         val parentId = browser.model.path.lastOrNull()?.id
         browser.model = browser.model.copy(loading = true, message = null)
         scope.launch {
-            runCatching { withContext(Dispatchers.IO) { DriveApi.createFolder(token, name.trim(), parentId); listingCache.clear(account.key) } }
+            ioResult { DriveApi.createFolder(token, name.trim(), parentId); listingCache.clear(account.key) }
                 .onSuccess { if (request == generation) browser.refresh(forceNetwork = true) }
-                .onFailure { if (it is CancellationException) throw it; if (request == generation) onError(localized(R.string.unable_to_create_directory)) }
+                .onFailure { if (request == generation) onError(localized(R.string.unable_to_create_directory)) }
         }
     }
 
@@ -99,15 +97,13 @@ internal class ListingMutations(
         browser.model = browser.model.copy(loading = true, message = null)
         scope.launch {
             val failures = withContext(Dispatchers.IO) {
-                var failed = 0
-                unique.forEach { file ->
-                    try { DriveApi.moveToTrash(token, file.id) }
-                    catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Exception) { failed++ }
+                try {
+                    unique.runFileBatch(DriveFile::id) { DriveApi.moveToTrash(token, it.id) }.failed
+                } finally {
+                    listingCache.clear(account.key)
                 }
-                listingCache.clear(account.key)
-                failed
             }
+
             if (request == generation) {
                 if (failures > 0) {
                     browser.model = browser.model.copy(loading = false, message = localized(R.string.could_not_move_arg_1_arg_2_items_to_trash, failures, unique.size))
@@ -128,20 +124,14 @@ internal class ListingMutations(
         browser.model = browser.model.copy(loading = true, message = null)
         scope.launch {
             val failures = withContext(Dispatchers.IO) {
-                var failed = 0
-                for (file in unique) {
-                    try {
-                        S3Api.delete(config, file)
-                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        failed++
-                    }
+                try {
+                    unique.runFileBatch(DriveFile::id) { S3Api.delete(config, it) }.failed
+                } finally {
+                    // Keep invalidation bound to the captured source account, including partial failures.
+                    listingCache.clear(account.key)
                 }
-                // Capture the source account: switching accounts must never invalidate another cache.
-                listingCache.clear(account.key)
-                failed
             }
+
             if (request == generation && session()?.account?.key == account.key) {
                 // Refresh even after partial failure, since some objects may already be gone.
                 browser.loadS3(completionMessage = if (failures == 0) null

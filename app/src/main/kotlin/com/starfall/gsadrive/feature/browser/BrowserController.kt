@@ -19,9 +19,9 @@ import com.starfall.gsadrive.data.driveLoadError
 import com.starfall.gsadrive.feature.accounts.AccountEntry
 import com.starfall.gsadrive.feature.accounts.AccountType
 import com.starfall.gsadrive.feature.accounts.isTabEnabled
+import com.starfall.gsadrive.shared.operations.ioResult
 import com.starfall.gsadrive.shared.i18n.localized
 import com.starfall.gsadrive.shared.model.Model
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -87,8 +87,7 @@ internal class BrowserController(
             return
         }
         scope.launch {
-            val result = runCatching { withContext(Dispatchers.IO) { DriveApi.searchFiles(token, query) } }
-            result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+            val result = ioResult { DriveApi.searchFiles(token, query) }
             done(result)
         }
     }
@@ -197,21 +196,18 @@ internal class BrowserController(
         updateBrowserTab(refreshTarget) { it.copy(loading = true, message = null, token = token) }
         onTokenAvailable()
         scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    DriveApi.listFiles(
-                        token,
-                        sharedWithMe = refreshTarget.tab == 1 && parentId == null,
-                        parentId = parentId,
-                        trashed = refreshTarget.tab == 3
-                    )
-                }
+            ioResult {
+                DriveApi.listFiles(
+                    token,
+                    sharedWithMe = refreshTarget.tab == 1 && parentId == null,
+                    parentId = parentId,
+                    trashed = refreshTarget.tab == 3
+                )
             }.onSuccess { files ->
                 if (updateBrowserTab(refreshTarget) { it.copy(files = files, loading = false, fromCache = false) }) {
                     cacheFiles(refreshTarget, files)
                 }
             }.onFailure { failure ->
-                if (failure is kotlinx.coroutines.CancellationException) throw failure
                 if (isBrowserRefreshCurrent(refreshTarget)) {
                     val diagnostic = driveLoadError(failure)
                     android.util.Log.e("ManyDrive", diagnostic + "\n" + failure.stackTrace.take(12).joinToString("\n"))
@@ -228,14 +224,13 @@ internal class BrowserController(
         val prefix = refreshTarget.path.lastOrNull()?.id.orEmpty()
         updateBrowserTab(refreshTarget) { it.copy(user = account.name, loading = true, message = null) }
         scope.launch {
-            runCatching { withContext(Dispatchers.IO) { S3Api.list(account.config, prefix) } }
+            ioResult { S3Api.list(account.config, prefix) }
                 .onSuccess { files ->
                     if (updateBrowserTab(refreshTarget) { it.copy(files = files, loading = false, fromCache = false, message = completionMessage) }) {
                         cacheFiles(refreshTarget, files)
                     }
                 }
                 .onFailure {
-                    if (it is CancellationException) throw it
                     if (isBrowserRefreshCurrent(refreshTarget)) {
                         browserError(refreshTarget, localized(R.string.unable_to_connect_s3_check_bucket_and_network_permissions_and_then_try_refreshing))
                     }
@@ -255,11 +250,9 @@ internal class BrowserController(
             it.copy(user = storedAccountName(AccountType.SERVICE, account.email), loading = true, message = null)
         }
         scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    val token = cached ?: ServiceAccountApi.accessToken(account)
-                    token to DriveApi.listFiles(token.value, sharedWithMe = shared, parentId = parentId, trashed = trashed)
-                }
+            ioResult {
+                val token = cached ?: ServiceAccountApi.accessToken(account)
+                token to DriveApi.listFiles(token.value, sharedWithMe = shared, parentId = parentId, trashed = trashed)
             }.onSuccess { (token, files) ->
                 if (isBrowserRefreshCurrent(refreshTarget)) {
                     serviceTokens[account.id] = token
@@ -273,7 +266,6 @@ internal class BrowserController(
                     }
                 }
             }.onFailure {
-                if (it is CancellationException) throw it
                 if (isBrowserRefreshCurrent(refreshTarget)) {
                     serviceTokens.remove(account.id)
                     browserError(refreshTarget,

@@ -17,6 +17,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.starfall.gsadrive.feature.accounts.AccountAvatar
 import com.starfall.gsadrive.feature.accounts.AccountEntry
+import com.starfall.gsadrive.shared.ui.FolderSearchField
 import com.starfall.gsadrive.shared.i18n.localized
 
 @Composable
@@ -79,18 +80,11 @@ internal fun FolderBrowserTopBar(
         ) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, localized(R.string.back)) }
             if (searching) {
-                TextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    placeholder = { Text(localized(R.string.search_drive)) },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                        unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                        focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                        unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
-                    )
+                FolderSearchField(
+                    query = query,
+                    onQueryChange = onQueryChange,
+                    placeholder = localized(R.string.search_drive),
+                    modifier = Modifier.weight(1f)
                 )
                 IconButton(onClick = { onQueryChange(""); onSearchingChange(false) }) {
                     Icon(Icons.Outlined.Close, localized(R.string.close_search))

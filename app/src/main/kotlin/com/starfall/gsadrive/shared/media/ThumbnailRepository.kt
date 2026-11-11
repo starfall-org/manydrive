@@ -11,7 +11,9 @@ import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
-import java.security.MessageDigest
+import com.starfall.gsadrive.shared.cache.cacheKeyHash
+import com.starfall.gsadrive.shared.cache.trimFileCache
+import com.starfall.gsadrive.shared.cache.writeCacheFile
 import java.util.concurrent.ConcurrentHashMap
 
 /** Shared two-level thumbnail cache for browser cards and MediaSession artwork. */
@@ -78,11 +80,7 @@ internal object ThumbnailRepository {
         File(context.filesDir, "thumbnail-cache").apply { mkdirs() }
 
     private fun diskFile(context: Context, cacheKey: String): File =
-        File(diskDirectory(context), sha256(cacheKey) + ".img")
-
-    private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray())
-        .joinToString("") { "%02x".format(it) }
+        File(diskDirectory(context), cacheKeyHash(cacheKey) + ".img")
 
     private fun decodeDisk(file: File): Bitmap? {
         if (!file.isFile || file.length() <= 0L) return null
@@ -93,13 +91,7 @@ internal object ThumbnailRepository {
 
     private fun writeDisk(target: File, bytes: ByteArray) {
         runCatching {
-            target.parentFile?.mkdirs()
-            val temporary = File(target.path + ".tmp")
-            temporary.outputStream().use { it.write(bytes) }
-            if (!temporary.renameTo(target)) {
-                temporary.copyTo(target, overwrite = true)
-                temporary.delete()
-            }
+            writeCacheFile(target) { it.writeBytes(bytes) }
             target.setLastModified(System.currentTimeMillis())
         }
     }
@@ -107,14 +99,10 @@ internal object ThumbnailRepository {
     private fun trimDiskCache(directory: File?) {
         if (directory == null || !directory.isDirectory) return
         runCatching {
-            var total = 0L
-            directory.listFiles().orEmpty()
-                .filter { it.isFile && !it.name.endsWith(".tmp") }
-                .sortedByDescending { it.lastModified() }
-                .forEach { file ->
-                    total += file.length()
-                    if (total > DISK_CACHE_BYTES) file.delete()
-                }
+            trimFileCache(
+                directory.listFiles().orEmpty().filter { it.isFile && !it.name.endsWith(".tmp") },
+                DISK_CACHE_BYTES
+            )
         }
     }
 }

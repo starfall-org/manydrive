@@ -9,6 +9,7 @@ import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
+import com.starfall.gsadrive.shared.cache.trimFileCache
 import java.io.File
 
 internal const val VIDEO_CACHE_TTL_MS = 7L * 24L * 60L * 60L * 1000L
@@ -23,17 +24,11 @@ internal fun touchVideoCacheFile(file: File) {
 
 
 internal fun pruneVideoFileCache(directory: File) {
-    val cutoff = System.currentTimeMillis() - VIDEO_CACHE_TTL_MS
-    var total = 0L
-    directory.listFiles().orEmpty()
-        .filter { it.isFile && !it.name.endsWith(".tmp") }
-        .onEach { if (it.lastModified() < cutoff) it.delete() }
-        .filter { it.isFile }
-        .sortedByDescending { it.lastModified() }
-        .forEach { file ->
-            total += file.length()
-            if (total > VIDEO_CACHE_MAX_BYTES) file.delete()
-        }
+    trimFileCache(
+        directory.listFiles().orEmpty().filter { it.isFile && !it.name.endsWith(".tmp") },
+        VIDEO_CACHE_MAX_BYTES,
+        expireBefore = System.currentTimeMillis() - VIDEO_CACHE_TTL_MS
+    )
 }
 
 /** Persistent byte-range cache for streamed Google Photos/S3 videos. */

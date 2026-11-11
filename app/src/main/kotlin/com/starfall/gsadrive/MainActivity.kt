@@ -55,6 +55,7 @@ import com.starfall.gsadrive.feature.viewer.ViewerState
 import com.starfall.gsadrive.feature.viewer.playback.MediaPagePlayback
 import com.starfall.gsadrive.feature.viewer.playback.MediaPlaybackService
 import com.starfall.gsadrive.feature.viewer.playback.VideoStreamCache
+import com.starfall.gsadrive.shared.operations.ioResult
 import com.starfall.gsadrive.shared.i18n.localized
 import com.starfall.gsadrive.shared.media.ThumbnailRepository
 import com.starfall.gsadrive.shared.media.resolveLocalMedia
@@ -132,9 +133,7 @@ class MainActivity : ComponentActivity() {
         incoming.action = null
         val request = ++externalOpenRevision
         lifecycleScope.launch {
-            val result = runCatching { withContext(Dispatchers.IO) {
-                resolveLocalMedia(this@MainActivity, uri, declaredType)
-            } }
+            val result = ioResult { resolveLocalMedia(this@MainActivity, uri, declaredType) }
             if (request != externalOpenRevision) return@launch
             result.onSuccess { viewerCoordinator.openLocal(it) }.onFailure {
                 Toast.makeText(this@MainActivity, it.message ?: localized(R.string.cannot_open_file), Toast.LENGTH_LONG).show()

@@ -30,13 +30,12 @@ import com.starfall.gsadrive.feature.viewer.playback.PlaybackSourceRegistry
 import com.starfall.gsadrive.feature.viewer.playback.registerLocalPlaybackSources
 import com.starfall.gsadrive.feature.viewer.playback.startLocalPlayback
 import com.starfall.gsadrive.feature.viewer.ui.ExternalMediaScreen
+import com.starfall.gsadrive.shared.operations.ioResult
 import com.starfall.gsadrive.shared.i18n.localized
 import com.starfall.gsadrive.shared.media.resolveLocalMedia
 import com.starfall.gsadrive.shared.ui.theme.ManyDriveTheme
 import com.starfall.gsadrive.shared.ui.theme.ThemeMode
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * Lightweight entry point for media opened from another app.
@@ -104,7 +103,7 @@ class ExternalMediaActivity : ComponentActivity() {
 
         val declaredType = incoming.type
         lifecycleScope.launch {
-            runCatching { withContext(Dispatchers.IO) { resolveLocalMedia(this@ExternalMediaActivity, uri, declaredType) } }
+            ioResult { resolveLocalMedia(this@ExternalMediaActivity, uri, declaredType) }
                 .onSuccess { resolved ->
                     file = resolved
                     error = null

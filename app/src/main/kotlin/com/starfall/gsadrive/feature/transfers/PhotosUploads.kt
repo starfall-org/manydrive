@@ -3,11 +3,9 @@ package com.starfall.gsadrive.feature.transfers
 import com.starfall.gsadrive.R
 
 import android.content.Context
-import com.starfall.gsadrive.data.DriveApi
 import com.starfall.gsadrive.data.DriveFile
 import com.starfall.gsadrive.data.PhotosApi
-import com.starfall.gsadrive.data.S3Api
-import com.starfall.gsadrive.feature.accounts.AccountType
+import com.starfall.gsadrive.feature.accounts.openStorage
 import com.starfall.gsadrive.feature.accounts.StorageSession
 import com.starfall.gsadrive.feature.photos.PhotosFolderUploadMode
 import com.starfall.gsadrive.shared.i18n.localized
@@ -20,9 +18,6 @@ import kotlinx.coroutines.withContext
 
 internal class PhotosUploads(private val context: Context, private val scope: CoroutineScope) {
     fun upload(files: List<DriveFile>, photosToken: String, mode: PhotosFolderUploadMode, session: StorageSession) {
-        val source = session.account
-        val driveToken = session.token
-        val s3 = session.s3
         val uploadNotifications = UploadNotifications(context)
         val total = if (files.any { it.isFolder }) null else files.count {
             it.mimeType.startsWith("image/") || it.mimeType.startsWith("video/")
@@ -36,6 +31,7 @@ internal class PhotosUploads(private val context: Context, private val scope: Co
             var albumsCreated = 0
             try {
                 withContext(Dispatchers.IO) {
+                    val storage = session.openStorage()
                     val visited = mutableSetOf<String>()
                     files.forEach { root ->
                         val album = if (mode == PhotosFolderUploadMode.ALBUM && root.isFolder) {
@@ -46,8 +42,7 @@ internal class PhotosUploads(private val context: Context, private val scope: Co
                             val item = queue.removeFirst()
                             if (!visited.add(item.id)) continue
                             if (item.isFolder) {
-                                val children = if (source.type == AccountType.S3) S3Api.list(requireNotNull(s3), item.id)
-                                    else DriveApi.listFiles(requireNotNull(driveToken), parentId = item.id)
+                                val children = storage.list(item.id)
                                 queue.addAll(children)
                                 continue
                             }
@@ -61,8 +56,7 @@ internal class PhotosUploads(private val context: Context, private val scope: Co
                             )
                             val temporary = File.createTempFile("photos-upload-", ".tmp", context.cacheDir)
                             try {
-                                if (source.type == AccountType.S3) S3Api.downloadTo(requireNotNull(s3), item.id, temporary)
-                                else DriveApi.downloadTo(requireNotNull(driveToken), item.id, temporary)
+                                storage.downloadTo(item.id, temporary)
                                 PhotosApi.upload(photosToken, temporary, item.name, item.mimeType, album)
                                 uploaded++
                             } catch (e: kotlinx.coroutines.CancellationException) {

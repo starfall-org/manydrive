@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
+import com.starfall.gsadrive.shared.ui.FolderSearchField
 import com.starfall.gsadrive.shared.i18n.localized
 import java.io.File
 
@@ -23,18 +24,11 @@ internal fun SystemFilesTopBar(
     TopAppBar(
         title = {
             if (searching) {
-                TextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    placeholder = { Text(localized(R.string.search_this_folder)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                        unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                        focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                        unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
-                    )
+                FolderSearchField(
+                    query = query,
+                    onQueryChange = onQueryChange,
+                    placeholder = localized(R.string.search_this_folder),
+                    modifier = Modifier.fillMaxWidth()
                 )
             } else {
                 Text(

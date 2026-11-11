@@ -23,6 +23,7 @@ import com.starfall.gsadrive.data.PhotosApi
 import com.starfall.gsadrive.data.S3Api
 import com.starfall.gsadrive.data.S3Config
 import com.starfall.gsadrive.shared.i18n.localized
+import com.starfall.gsadrive.shared.cache.writeCacheFile
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -105,21 +106,16 @@ object PlaybackSourceRegistry {
                 return source.cacheFile
             }
             val target = source.cacheFile
-            val temporary = File(target.path + ".tmp")
-            target.parentFile?.mkdirs()
-            temporary.delete()
             try {
-                when (source.accountType) {
-                    "GOOGLE", "SERVICE" -> DriveApi.downloadTo(
-                        source.accessToken ?: throw IOException(localized(R.string.missing_media_access)),
-                        source.file.id,
-                        temporary
-                    )
-                    else -> throw IOException(localized(R.string.the_account_type_does_not_support_media_playback))
-                }
-                if (!temporary.renameTo(target)) {
-                    temporary.copyTo(target, overwrite = true)
-                    temporary.delete()
+                writeCacheFile(target) { temporary ->
+                    when (source.accountType) {
+                        "GOOGLE", "SERVICE" -> DriveApi.downloadTo(
+                            source.accessToken ?: throw IOException(localized(R.string.missing_media_access)),
+                            source.file.id,
+                            temporary
+                        )
+                        else -> throw IOException(localized(R.string.the_account_type_does_not_support_media_playback))
+                    }
                 }
                 if (isVideo) {
                     touchVideoCacheFile(target)
@@ -127,7 +123,6 @@ object PlaybackSourceRegistry {
                 }
                 return target
             } catch (t: Throwable) {
-                temporary.delete()
                 if (t is IOException) throw t
                 throw IOException(t.message ?: localized(R.string.unable_to_load_media), t)
             }
