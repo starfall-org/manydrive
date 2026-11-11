@@ -1,5 +1,7 @@
 package com.starfall.gsadrive.ui
 
+import com.starfall.gsadrive.shared.ui.NavigationSwipe
+import com.starfall.gsadrive.shared.ui.navigationSwipe
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

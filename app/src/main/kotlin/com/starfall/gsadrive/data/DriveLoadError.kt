@@ -1,6 +1,8 @@
 package com.starfall.gsadrive.data
 
-import com.starfall.gsadrive.tr
+import com.starfall.gsadrive.R
+
+import com.starfall.gsadrive.shared.i18n.localized
 
 import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import com.google.api.client.http.HttpResponseException
@@ -18,22 +20,22 @@ internal fun driveLoadError(failure: Throwable): String {
             .distinct()
         val detail = when {
             reasons.any { it in setOf("accessNotConfigured", "serviceDisabled") } ->
-                tr("The Google Drive API is not enabled for your app's project.")
+                localized(R.string.the_google_drive_api_is_not_enabled_for_your_app_s_project)
             reasons.any { it in setOf("rateLimitExceeded", "userRateLimitExceeded", "dailyLimitExceeded") } || http.statusCode == 429 ->
-                tr("Google Drive is limiting the number of visits. Please try again later.")
-            http.statusCode == 401 -> tr("Google refuses access token. Please re-authorize your account.")
-            http.statusCode == 403 -> tr("Google denies access to Drive. Need to check app permissions and account policies.")
-            http.statusCode == 404 -> tr("The folder no longer exists or the account doesn't have access rights.")
-            http.statusCode >= 500 -> tr("The Google Drive server is experiencing an error. Please try again later.")
-            else -> tr("Request to download Drive file list failed.")
+                localized(R.string.google_drive_is_limiting_the_number_of_visits_please_try_again_later)
+            http.statusCode == 401 -> localized(R.string.google_refuses_access_token_please_re_authorize_your_account)
+            http.statusCode == 403 -> localized(R.string.google_denies_access_to_drive_need_to_check_app_permissions_and_account_policies)
+            http.statusCode == 404 -> localized(R.string.the_folder_no_longer_exists_or_the_account_doesn_t_have_access_rights)
+            http.statusCode >= 500 -> localized(R.string.the_google_drive_server_is_experiencing_an_error_please_try_again_later)
+            else -> localized(R.string.request_to_download_drive_file_list_failed)
         }
         return "$detail (HTTP ${http.statusCode}${if (reasons.isEmpty()) "" else ": ${reasons.joinToString() }"})"
     }
     return when {
-        causes.any { it is UnknownHostException } -> tr("Google Drive address cannot be resolved. Please check your network connection or DNS.")
-        causes.any { it is SocketTimeoutException } -> tr("Google Drive connection timed out. Let's try something new.")
-        causes.any { it is SSLException } -> tr("Unable to establish a secure connection to Google Drive.")
-        causes.any { it is LinkageError } -> tr("Google library compatibility error (${causes.first { it is LinkageError }.javaClass.simpleName}).")
-        else -> tr("Unable to load Drive file list (${failure.javaClass.simpleName}).")
+        causes.any { it is UnknownHostException } -> localized(R.string.google_drive_address_cannot_be_resolved_please_check_your_network_connection_or_dns)
+        causes.any { it is SocketTimeoutException } -> localized(R.string.google_drive_connection_timed_out_let_s_try_something_new)
+        causes.any { it is SSLException } -> localized(R.string.unable_to_establish_a_secure_connection_to_google_drive)
+        causes.any { it is LinkageError } -> localized(R.string.google_library_compatibility_error_arg_1, causes.first { it is LinkageError }.javaClass.simpleName)
+        else -> localized(R.string.unable_to_load_drive_file_list_arg_1, failure.javaClass.simpleName)
     }
 }

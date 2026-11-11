@@ -1,0 +1,500 @@
+package com.starfall.gsadrive.feature.viewer
+
+import com.starfall.gsadrive.R
+
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import com.starfall.gsadrive.MainActivity
+import com.starfall.gsadrive.data.DriveApi
+import com.starfall.gsadrive.data.DriveFile
+import com.starfall.gsadrive.data.FileListCache
+import com.starfall.gsadrive.data.S3Api
+import com.starfall.gsadrive.data.S3Config
+import com.starfall.gsadrive.feature.accounts.AccountEntry
+import com.starfall.gsadrive.feature.accounts.AccountType
+import com.starfall.gsadrive.feature.viewer.playback.PlaybackProgress
+import com.starfall.gsadrive.feature.viewer.playback.PlaybackSource
+import com.starfall.gsadrive.feature.viewer.playback.PlaybackSourceRegistry
+import com.starfall.gsadrive.feature.viewer.playback.registerLocalPlaybackSources
+import com.starfall.gsadrive.feature.viewer.playback.startLocalPlayback
+import com.starfall.gsadrive.shared.i18n.localized
+import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * Owns viewer state and file-preview/media-playback orchestration.
+ * MainActivity only supplies platform/account state and a MediaController connection.
+ */
+internal class ViewerCoordinator(
+    private val context: Context,
+    private val scope: CoroutineScope,
+    private val listCache: FileListCache,
+    private val activeAccount: () -> AccountEntry?,
+    private val accessToken: () -> String?,
+    private val photosAccessToken: () -> String? = { null },
+    private val photosTokenProvider: (String) -> (() -> String)? = { null },
+    private val s3Config: (AccountEntry) -> S3Config?,
+    private val currentFiles: () -> List<DriveFile>,
+    private val player: () -> Player?,
+    private val awaitPlayer: suspend () -> Player,
+    private val requestNotificationPermission: () -> Unit,
+    private val requestAccessToken: () -> Unit
+) {
+    var state by mutableStateOf<ViewerState?>(null)
+        private set
+
+    private val previews = PreviewFiles(context, accessToken, photosTokenProvider, s3Config)
+
+    private var localPreview = false
+    private var generation = 0
+    private var awaitingTokenFor: String? = null
+    private var mediaPrefetchJob: Job? = null
+    private var requestedPrefetchAfterMediaId: String? = null
+
+    fun onAccessTokenAvailable() {
+        val expectedAccount = awaitingTokenFor ?: return
+        if (activeAccount()?.key != expectedAccount || accessToken() == null) return
+        awaitingTokenFor = null
+        val pending = state ?: return
+        open(pending.file, pending.minimized, pending.swipeQueue)
+    }
+
+    fun onAccessTokenError(message: String) {
+        if (awaitingTokenFor == null) return
+        awaitingTokenFor = null
+        state = state?.copy(loading = false, error = message)
+    }
+
+    fun syncToMediaItem(mediaItem: MediaItem) {
+        val source = PlaybackSourceRegistry.get(mediaItem.mediaId) ?: return
+        localPreview = source.accountType in setOf("LOCAL", "CONTENT")
+        val previous = state
+        val queue = previous?.swipeQueue?.takeIf { items -> items.any { it.id == source.file.id } }
+            ?: currentFiles().filter(::isSwipePreview)
+        val index = queue.indexOfFirst { it.id == source.file.id }
+        state = ViewerState(
+            file = source.file,
+            localPath = source.cacheFile.path,
+            loading = false,
+            minimized = previous?.minimized ?: true,
+            swipeQueue = queue,
+            swipeIndex = index,
+            previewPaths = previous?.previewPaths.orEmpty()
+        )
+        if (!localPreview) activeAccount()?.let { prefetchAdjacentImages(it, queue, index) }
+        prefetchNextMedia(source.mediaId)
+    }
+
+    fun open(file: DriveFile, minimized: Boolean = false, swipeQueue: List<DriveFile>? = null) {
+        if (file.isFolder) return
+        if (!isPreviewable(file)) {
+            val type = file.mimeType.ifBlank { localized(R.string.this_type) }
+            Toast.makeText(context, localized(R.string.previewing_file_type_arg_1_is_not_supported_yet, type), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val account = activeAccount() ?: return
+        localPreview = false
+        awaitingTokenFor = null
+        val request = ++generation
+        val browsingQueue = if (isSwipePreview(file)) {
+            (swipeQueue ?: currentFiles().filter(::isSwipePreview)).ifEmpty { listOf(file) }
+        } else emptyList()
+        val browsingIndex = browsingQueue.indexOfFirst { it.id == file.id }
+
+        if (file.photosMediaId == null && account.type != AccountType.S3 && accessToken() == null) {
+            awaitingTokenFor = account.key
+            state = ViewerState(
+                file = file, loading = true, minimized = minimized,
+                swipeQueue = browsingQueue, swipeIndex = browsingIndex
+            )
+            requestAccessToken()
+            return
+        }
+
+        if (isMediaPreview(file)) {
+            requestNotificationPermission()
+            openMedia(request, account, file, minimized, browsingQueue)
+            return
+        }
+
+        if (file.mimeType.startsWith("image/") && browsingQueue.any { queued ->
+                PlaybackSourceRegistry.all().any { it.file.id == queued.id }
+            }) {
+            // Images share the same pager. Keep its media pages and session queue alive, paused.
+            player()?.pause()
+        } else {
+            player()?.stop()
+            player()?.clearMediaItems()
+            PlaybackSourceRegistry.clear()
+        }
+        state = ViewerState(
+            file = file,
+            loading = true,
+            minimized = minimized,
+            swipeQueue = browsingQueue,
+            swipeIndex = browsingIndex,
+            previewPaths = previews.cachedImagePaths(account.key, browsingQueue)
+        )
+        prefetchAdjacentImages(account, browsingQueue, browsingIndex)
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val target = previews.previewCacheFile(account.key, file)
+                    if (!target.isFile || target.length() == 0L) {
+                        previews.downloadPreview(account, file, target)
+                        previews.prunePreviewCache()
+                    }
+                    val text = if (isTextPreview(file)) {
+                        require(target.length() <= MAX_TEXT_PREVIEW_BYTES) {
+                            localized(R.string.this_text_file_is_too_large_to_edit_4_mb_limit)
+                        }
+                        target.readText(Charsets.UTF_8)
+                    } else null
+                    target.path to text
+                }
+            }.onSuccess { (path, text) ->
+                if (request == generation && state?.file?.id == file.id) {
+                    state = state?.copy(
+                        localPath = path,
+                        text = text,
+                        loading = false,
+                        error = null,
+                        previewPaths = if (file.mimeType.startsWith("image/"))
+                            state?.previewPaths.orEmpty() + (file.id to path) else state?.previewPaths.orEmpty()
+                    )
+                }
+            }.onFailure {
+                if (request == generation && state?.file?.id == file.id) {
+                    state = state?.copy(loading = false, error = it.message ?: localized(R.string.cannot_open_file))
+                }
+            }
+        }
+    }
+
+    fun openLocal(file: DriveFile, queue: List<DriveFile> = listOf(file), minimized: Boolean = false) {
+        if (file.isFolder) return
+        if (!isPreviewable(file)) {
+            Toast.makeText(context, localized(R.string.this_file_type_cannot_be_previewed), Toast.LENGTH_SHORT).show()
+            return
+        }
+        localPreview = true
+        awaitingTokenFor = null
+        val request = ++generation
+        mediaPrefetchJob?.cancel()
+        mediaPrefetchJob = null
+        requestedPrefetchAfterMediaId = null
+        val browsingQueue = if (isSwipePreview(file)) queue.filter(::isSwipePreview).ifEmpty { listOf(file) } else emptyList()
+        val images = browsingQueue.filter { it.mimeType.startsWith("image/") }.associate { it.id to it.id }
+        state = ViewerState(file = file, localPath = file.id, loading = true, minimized = minimized,
+            swipeQueue = browsingQueue, swipeIndex = browsingQueue.indexOfFirst { it.id == file.id }, previewPaths = images)
+        if (isMediaPreview(file)) {
+            requestNotificationPermission()
+            val sources = registerLocalPlaybackSources(browsingQueue)
+            scope.launch {
+                val result = runCatching {
+                    val controller = player() ?: awaitPlayer()
+                    if (request != generation) return@launch
+                    startLocalPlayback(context, controller, file, sources)
+                }
+                if (request == generation) state = state?.copy(loading = false, error = result.exceptionOrNull()?.message)
+            }
+        } else {
+            val sharesMediaQueue = file.mimeType.startsWith("image/") &&
+                PlaybackSourceRegistry.all().any { source ->
+                    source.accountType in setOf("LOCAL", "CONTENT") && browsingQueue.any { it.id == source.file.id }
+                }
+            if (sharesMediaQueue) player()?.pause()
+            else {
+                player()?.stop()
+                player()?.clearMediaItems()
+                PlaybackSourceRegistry.clear()
+            }
+            scope.launch {
+                val result = runCatching {
+                    withContext(Dispatchers.IO) {
+                        if (file.id.startsWith("content://")) {
+                            context.contentResolver.openInputStream(android.net.Uri.parse(file.id))?.use { }
+                                ?: error(localized(R.string.cannot_read_this_file))
+                            return@withContext null
+                        }
+                        val local = File(file.id)
+                        check(local.isFile && local.canRead()) { localized(R.string.cannot_read_this_file) }
+                        if (isTextPreview(file)) {
+                            val bytes = local.inputStream().use { input ->
+                                val output = java.io.ByteArrayOutputStream()
+                                val buffer = ByteArray(8192)
+                                while (output.size() <= MAX_TEXT_PREVIEW_BYTES) {
+                                    val count = input.read(buffer, 0, minOf(buffer.size,
+                                        MAX_TEXT_PREVIEW_BYTES.toInt() + 1 - output.size()))
+                                    if (count < 0) break
+                                    output.write(buffer, 0, count)
+                                }
+                                output.toByteArray()
+                            }
+                            check(bytes.size <= MAX_TEXT_PREVIEW_BYTES) { localized(R.string.content_exceeds_the_4_mb_limit) }
+                            bytes.toString(Charsets.UTF_8)
+                        } else null
+                    }
+                }
+                if (request == generation) state = state?.copy(loading = false,
+                    text = result.getOrNull(), error = result.exceptionOrNull()?.message)
+            }
+        }
+    }
+
+    private fun openMedia(
+        request: Int,
+        account: AccountEntry,
+        file: DriveFile,
+        minimized: Boolean,
+        browsingQueue: List<DriveFile>
+    ) {
+        val mediaQueue = browsingQueue.filter(::isMediaPreview)
+        val mediaIndex = mediaQueue.indexOfFirst { it.id == file.id }.coerceAtLeast(0)
+        val browsingIndex = browsingQueue.indexOfFirst { it.id == file.id }.coerceAtLeast(0)
+        val config = if (account.type == AccountType.S3) s3Config(account) else null
+        val token = if (file.photosMediaId != null) photosAccessToken() else if (account.type == AccountType.S3) null else accessToken()
+        if (account.type != AccountType.S3 && token == null) {
+            state = ViewerState(file = file, error = localized(R.string.access_permissions_need_to_be_granted_before_playing_media))
+            return
+        }
+        if (account.type == AccountType.S3 && config == null) {
+            state = ViewerState(file = file, error = localized(R.string.s3_configuration_not_found))
+            return
+        }
+
+        val sources = mediaQueue.map { item ->
+            PlaybackSource(
+                mediaId = "${account.key}:${item.id}",
+                file = item,
+                accountType = if (item.photosMediaId != null) "PHOTOS" else account.type.name,
+                accessToken = token,
+                s3Config = config,
+                cacheFile = previews.previewCacheFile(account.key, item),
+                photosTokenProvider = if (item.photosMediaId != null) photosTokenProvider(account.key) else null
+            )
+        }
+        PlaybackSourceRegistry.replace(sources)
+        val selectedSource = sources.getOrNull(mediaIndex) ?: return
+        prefetchNextMedia(selectedSource.mediaId)
+        state = ViewerState(
+            file = file,
+            localPath = selectedSource.cacheFile.path,
+            loading = false,
+            minimized = minimized,
+            swipeQueue = browsingQueue,
+            swipeIndex = browsingIndex,
+            previewPaths = previews.cachedImagePaths(account.key, browsingQueue)
+        )
+        prefetchAdjacentImages(account, browsingQueue, browsingIndex)
+
+        scope.launch {
+            runCatching {
+                val controller = player() ?: awaitPlayer()
+                val items = sources.map(PlaybackSource::toMediaItem)
+                controller to items
+            }.onSuccess { (controller, items) ->
+                if (request == generation && state?.file?.id == file.id) {
+                    val existingIndex = (0 until controller.mediaItemCount).firstOrNull {
+                        controller.getMediaItemAt(it).mediaId == items[mediaIndex].mediaId
+                    }
+                    if (existingIndex != null && controller.mediaItemCount == items.size &&
+                        items.indices.all { controller.getMediaItemAt(it).mediaId == items[it].mediaId })
+                        controller.seekTo(existingIndex, if (controller.currentMediaItem?.mediaId == items[mediaIndex].mediaId)
+                            controller.currentPosition else PlaybackProgress.read(context, items[mediaIndex].mediaId))
+                    else controller.setMediaItems(items, mediaIndex, PlaybackProgress.read(context, items[mediaIndex].mediaId))
+                    controller.prepare()
+                    controller.play()
+                }
+            }.onFailure {
+                if (request == generation && state?.file?.id == file.id) {
+                    state = state?.copy(error = it.message ?: localized(R.string.cannot_open_media))
+                }
+            }
+        }
+    }
+
+    fun swipeTo(index: Int) {
+        val current = state ?: return
+        if (current.saving) return
+        val queue = current.swipeQueue
+        val target = queue.getOrNull(index) ?: return
+        if (target.id == current.file.id) return
+        val controller = player()
+        val source = PlaybackSourceRegistry.all().firstOrNull { it.file.id == target.id }
+        val mediaIndex = if (controller != null && source != null)
+            (0 until controller.mediaItemCount).firstOrNull { controller.getMediaItemAt(it).mediaId == source.mediaId }
+        else null
+        if (isMediaPreview(target) && controller != null && source != null && mediaIndex != null) {
+            // Select the existing playlist item, preserving its page and queue.
+            PlaybackProgress.save(context, controller.currentMediaItem?.mediaId, controller.currentPosition)
+            controller.seekTo(mediaIndex, PlaybackProgress.read(context, source.mediaId))
+            controller.play()
+            syncToMediaItem(controller.getMediaItemAt(mediaIndex))
+        } else {
+            if (localPreview) openLocal(target, queue, current.minimized)
+            else open(target, minimized = current.minimized, swipeQueue = queue)
+        }
+    }
+
+    fun close() {
+        awaitingTokenFor = null
+        ++generation
+        player()?.stop()
+        player()?.clearMediaItems()
+        PlaybackProgress.clear(context)
+        requestedPrefetchAfterMediaId = null
+        mediaPrefetchJob?.cancel()
+        mediaPrefetchJob = null
+        PlaybackSourceRegistry.clear()
+        state = null
+    }
+
+    fun minimize() {
+        val current = state ?: return
+        if (isMediaPreview(current.file)) state = current.copy(minimized = true) else close()
+    }
+
+    fun expand() {
+        state = state?.copy(minimized = false)
+    }
+
+    fun updateText(text: String) {
+        val current = state ?: return
+        if (current.text != null && !current.saving) state = current.copy(text = text)
+    }
+
+    fun saveText() {
+        val current = state ?: return
+        val text = current.text ?: return
+        if (current.saving) return
+        val local = localPreview
+        val account = activeAccount()
+        if (!local && account == null) return
+        val content = text.toByteArray(Charsets.UTF_8)
+        if (content.size > MAX_TEXT_PREVIEW_BYTES) {
+            Toast.makeText(context, localized(R.string.content_exceeds_the_4_mb_limit), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val request = generation
+        state = current.copy(saving = true, error = null)
+        scope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    if (local) {
+                        File(current.file.id).writeBytes(content)
+                        return@withContext
+                    }
+                    requireNotNull(account)
+                    when (account.type) {
+                        AccountType.S3 -> {
+                            val config = s3Config(account) ?: error(localized(R.string.s3_configuration_not_found))
+                            val temporary = File.createTempFile("manydrive-text-", ".tmp", context.cacheDir)
+                            try {
+                                temporary.writeBytes(content)
+                                S3Api.upload(config, current.file.id,
+                                    current.file.mimeType.ifBlank { "text/plain" }, temporary)
+                            } finally {
+                                temporary.delete()
+                            }
+                        }
+                        AccountType.GOOGLE, AccountType.SERVICE -> {
+                            val token = accessToken() ?: error(localized(R.string.write_permission_is_required_before_saving))
+                            DriveApi.updateContent(token, current.file.id,
+                                current.file.mimeType.ifBlank { "text/plain; charset=UTF-8" }, content)
+                        }
+                    }
+                    current.localPath?.let { File(it).writeBytes(content) }
+                    listCache.clear(account.key)
+                }
+            }
+            if (request == generation && state?.file?.id == current.file.id) {
+                state = state?.copy(saving = false, error = result.exceptionOrNull()?.message)
+                Toast.makeText(context,
+                    if (result.isSuccess) localized(R.string.changes_saved) else localized(R.string.unable_to_save_changes),
+                    Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /**
+     * Materialize only the next media item into the shared viewer cache ahead of playback.
+     * Page players share the same per-item download lock and cache with this IO prefetch.
+     * Requests are serialized so fast swipes never start a fan-out of background downloads.
+     */
+    private fun prefetchNextMedia(currentMediaId: String) {
+        requestedPrefetchAfterMediaId = currentMediaId
+        if (mediaPrefetchJob?.isActive == true) return
+        startNextMediaPrefetch()
+    }
+
+    private fun startNextMediaPrefetch() {
+        val currentMediaId = requestedPrefetchAfterMediaId ?: return
+        requestedPrefetchAfterMediaId = null
+        val sources = PlaybackSourceRegistry.all()
+        val currentIndex = sources.indexOfFirst { it.mediaId == currentMediaId }
+        if (currentIndex < 0) return
+        val current = sources[currentIndex]
+        val next = sources.getOrNull(currentIndex + 1) ?: return
+
+        // S3 page players buffer their own HTTP streams; never download whole objects for prefetch.
+        if (current.accountType in setOf("S3", "LOCAL", "PHOTOS", "CONTENT") || next.accountType in setOf("S3", "LOCAL", "PHOTOS", "CONTENT")) return
+        if (next.cacheFile.isFile && next.cacheFile.length() > 0L) return
+
+        val job = scope.launch(Dispatchers.IO) {
+            runCatching {
+                // Do not compete with startup of the current item. resolve() shares the same per-item
+                // lock as ExoPlayer, so this either waits for its download or performs it once.
+                PlaybackSourceRegistry.resolve(current.mediaId)
+                PlaybackSourceRegistry.resolve(next.mediaId)
+            }.onSuccess { previews.prunePreviewCache() }
+        }
+        mediaPrefetchJob = job
+        job.invokeOnCompletion {
+            scope.launch {
+                if (mediaPrefetchJob === job) mediaPrefetchJob = null
+                if (requestedPrefetchAfterMediaId != null) startNextMediaPrefetch()
+            }
+        }
+    }
+
+    private fun prefetchAdjacentImages(account: AccountEntry, queue: List<DriveFile>, index: Int) {
+        if (index !in queue.indices) return
+        listOf(index - 1, index + 1).mapNotNull(queue::getOrNull)
+            .filter { it.mimeType.startsWith("image/") }
+            .forEach { item ->
+                val target = previews.previewCacheFile(account.key, item)
+                if (target.isFile && target.length() > 0L) {
+                    state = state?.copy(previewPaths = state?.previewPaths.orEmpty() + (item.id to target.path))
+                    return@forEach
+                }
+                scope.launch {
+                    val result = runCatching {
+                        withContext(Dispatchers.IO) {
+                            if (!target.isFile || target.length() == 0L) {
+                                previews.downloadPreview(account, item, target)
+                                previews.prunePreviewCache()
+                            }
+                            target.path
+                        }
+                    }
+                    result.getOrNull()?.let { path ->
+                        if (state?.swipeQueue?.any { it.id == item.id } == true) {
+                            state = state?.copy(previewPaths = state?.previewPaths.orEmpty() + (item.id to path))
+                        }
+                    }
+                }
+            }
+    }
+
+
+}

@@ -6,7 +6,7 @@ ManyDrive is a native Android file-manager starter built with Kotlin and Jetpack
 
 - Android Studio Ladybug or newer
 - JDK 17
-- Android SDK Platform 35
+- Android SDK Platform 36
 
 ## Run
 
@@ -17,6 +17,32 @@ Open this repository directly in Android Studio, then run the `app` configuratio
 ```
 
 The project has no Flutter or Dart runtime. It uses a Kotlin/Jetpack Compose Material 3 interface, Google account picker, Google Identity authorization, and the official Google Drive Java SDK.
+
+## Development and checks
+
+The app remains a single Gradle module. Under `app/src/main/kotlin/com/starfall/gsadrive`, only `MainActivity.kt` lives at the package root:
+
+- `app`: Compose shell, drawer, top bars, previews and Android platform bridges.
+- `feature/accounts`: saved-account/controller workflows, account UI and the in-memory `StorageSession` snapshot used by file actions and transfers.
+- `feature/browser`: listing/controller, independent Files/Shared snapshots, search, browser UI and Trash UI.
+- `feature/fileactions`: sheets, permissions, copy/move, folder creation and trash/delete orchestration.
+- `feature/transfers`: document uploads, Photos uploads, cloud downloads, local ↔ cloud transfers and upload notifications.
+- `feature/photos`, `feature/systemfiles`, `feature/settings`: feature UI and their existing controllers/actions.
+- `feature/viewer`: viewer coordination/preview cache, `ui` for previews/media controls, and `playback` for sources, player, service, notifications and progress.
+- `shared`: listing model, reusable file rows/cards, theme/gestures/loading, media metadata/thumbnails and Android string-resource access. Localized strings live in `app/src/main/res/values-*`.
+- `data`: existing provider clients, persistence and storage helpers; their APIs and stored formats remain unchanged.
+
+`BrowserController` owns listing state; its unchanged `Model` snapshot is shared with Photos and System Files. System Files reuses browser presentation. MainActivity retains launchers, lifecycle, permission/authorization bridges and coordination between features. See [architecture](docs/architecture.md) for boundaries and the file-size comparison.
+
+The application ID and launcher component remain unchanged. The moved external-media Activity retains its previous explicit component name through a manifest alias; the playback service declaration and references use its new package. Preference/cache keys and credential storage are unchanged.
+
+```bash
+./gradlew :app:testDebugUnitTest :app:assembleDebug
+./gradlew :app:assembleDebugAndroidTest
+./gradlew :app:connectedDebugAndroidTest
+```
+
+Use JDK 17 (`JAVA_HOME`) and point `ANDROID_HOME` or `local.properties` at Android SDK 36. The instrumentation suite needs a connected Android device or emulator; building its APK does not execute the tests. See [refactor verification](docs/refactor-verification.md) for recorded results and pending device checks. Sign-in, provider transfers, Photos and background playback also require manual checks with suitable accounts and media.
 
 ## Release builds on Codemagic
 
@@ -52,7 +78,7 @@ The profile button opens one account list for **Google**, **S3**, and **Service 
 - **S3:** enter a name, HTTPS endpoint, bucket, region and access keys in a dialog. The app verifies bucket access before saving. Multiple connections are supported.
 - **Service Account:** choose a Google service-account JSON key with Android's file picker. The app validates its type, email and RSA private key, obtains an OAuth token, and verifies Drive access before saving. Reimporting the same service-account email replaces its saved key. Enable Drive API in that account's project and share files with its `client_email`, or grant it access to a shared drive. Tokens refresh when needed during browsing. Domain-wide impersonation is not configured.
 
-S3 and Service Account currently display file listings. Service accounts have no personal Drive storage quota, so the app does not offer uploads into their root. See [Google's service account OAuth guide](https://developers.google.com/identity/protocols/oauth2/service-account) and [shared drive guidance](https://developers.google.com/workspace/drive/api/guides/about-shareddrives).
+S3 supports file listing, upload, download and direct deletion; it does not provide Shared, Trash, Drive-wide search or internal S3 copy. Service Account uses its own Drive credentials and is subject to the permissions granted to it. Service accounts have no personal Drive storage quota, so the app does not offer uploads into their root. See [Google's service account OAuth guide](https://developers.google.com/identity/protocols/oauth2/service-account) and [shared drive guidance](https://developers.google.com/workspace/drive/api/guides/about-shareddrives).
 
 Access keys and imported private keys are encrypted with AES-GCM using device-bound Android Keystore keys, in the app's no-backup directory. The JSON source is read once; its path is not retained. Existing S3 connections remain compatible with the encrypted storage format. Removing an account deletes its saved connection without deleting remote files. Signing out clears the active session while keeping saved accounts available in the account list. Reinstalling or moving to another device requires importing credentials again.
 

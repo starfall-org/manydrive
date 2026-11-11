@@ -4,6 +4,9 @@ import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
 import com.starfall.gsadrive.data.DriveFile
+import com.starfall.gsadrive.feature.viewer.playback.PlaybackSource
+import com.starfall.gsadrive.feature.viewer.playback.PlaybackSourceRegistry
+import com.starfall.gsadrive.feature.viewer.playback.resolvePlaybackDataSpec
 import java.io.File
 import org.junit.Assert.*
 import org.junit.Test

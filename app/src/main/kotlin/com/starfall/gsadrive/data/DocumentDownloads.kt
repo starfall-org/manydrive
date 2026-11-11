@@ -1,6 +1,8 @@
 package com.starfall.gsadrive.data
 
-import com.starfall.gsadrive.tr
+import com.starfall.gsadrive.R
+
+import com.starfall.gsadrive.shared.i18n.localized
 
 import android.app.DownloadManager
 import android.content.Context
@@ -24,9 +26,9 @@ internal class DocumentDownloads(
         var queued = 0
         suspend fun walk(item: DriveFile, path: String, depth: Int) {
             currentCoroutineContext().ensureActive()
-            check(depth < 128) { tr("The directory is too deep.") }
+            check(depth < 128) { localized(R.string.the_directory_is_too_deep) }
             if (item.isFolder) {
-                check(ancestors.add(item.id)) { tr("Folder structure is duplicated.") }
+                check(ancestors.add(item.id)) { localized(R.string.folder_structure_is_duplicated) }
                 val names = mutableSetOf<String>()
                 list(item).forEach { child ->
                     walk(child, "$path/${uniqueName(child.name, names)}", depth + 1)

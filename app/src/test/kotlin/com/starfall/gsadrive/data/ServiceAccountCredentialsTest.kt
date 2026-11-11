@@ -8,6 +8,8 @@ import java.security.Signature
 import kotlin.io.encoding.Base64
 
 class ServiceAccountCredentialsTest {
+    @org.junit.Before fun setUpStrings() = com.starfall.gsadrive.shared.i18n.installTestStrings()
+    @org.junit.After fun clearStrings() = com.starfall.gsadrive.shared.i18n.clearTestStrings()
     private val pair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
     private fun json() = JSONObject()
         .put("type", "service_account")

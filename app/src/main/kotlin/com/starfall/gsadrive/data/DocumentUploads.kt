@@ -1,6 +1,8 @@
 package com.starfall.gsadrive.data
 
-import com.starfall.gsadrive.tr
+import com.starfall.gsadrive.R
+
+import com.starfall.gsadrive.shared.i18n.localized
 
 import android.content.ContentResolver
 import android.net.Uri
@@ -19,9 +21,9 @@ class DocumentUploads(
         uris.forEach { uri ->
             currentCoroutineContext().ensureActive()
             val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
-                check(it.moveToFirst()) { tr("Cannot read file name.") }
+                check(it.moveToFirst()) { localized(R.string.cannot_read_file_name) }
                 it.getString(0)
-            } ?: error(tr("The selected file cannot be read."))
+            } ?: error(localized(R.string.the_selected_file_cannot_be_read))
             uploadFile(uri, name, resolver.getType(uri) ?: "application/octet-stream", parent)
         }
     }
@@ -30,11 +32,11 @@ class DocumentUploads(
         val visited = mutableSetOf<String>()
         suspend fun walk(id: String, destination: String?, depth: Int) {
             currentCoroutineContext().ensureActive()
-            check(depth < 128 && visited.add(id)) { tr("The directory structure is too deep or repetitive.") }
+            check(depth < 128 && visited.add(id)) { localized(R.string.the_directory_structure_is_too_deep_or_repetitive) }
             val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
             val name = resolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use {
-                check(it.moveToFirst()) { tr("Cannot read directory.") }; it.getString(0)
-            } ?: error(tr("The selected folder cannot be read."))
+                check(it.moveToFirst()) { localized(R.string.cannot_read_directory) }; it.getString(0)
+            } ?: error(localized(R.string.the_selected_folder_cannot_be_read))
             val target = createFolder(name, destination)
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, id)
             val projection = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -48,7 +50,7 @@ class DocumentUploads(
                     if (mime == DocumentsContract.Document.MIME_TYPE_DIR) walk(child, target, depth + 1)
                     else uploadFile(DocumentsContract.buildDocumentUriUsingTree(tree, child), childName, mime, target)
                 }
-            } ?: error(tr("Unable to read the contents of folder $name."))
+            } ?: error(localized(R.string.unable_to_read_the_contents_of_folder_arg_1, name))
         }
         walk(DocumentsContract.getTreeDocumentId(tree), parent, 0)
     }

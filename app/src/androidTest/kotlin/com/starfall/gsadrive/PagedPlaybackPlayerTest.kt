@@ -6,6 +6,8 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.starfall.gsadrive.feature.viewer.playback.PagedPlaybackPlayer
+import com.starfall.gsadrive.feature.viewer.playback.PlaybackProgress
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith

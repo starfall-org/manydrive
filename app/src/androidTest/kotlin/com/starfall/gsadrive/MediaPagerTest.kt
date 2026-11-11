@@ -10,7 +10,11 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
 import androidx.test.platform.app.InstrumentationRegistry
 import com.starfall.gsadrive.data.DriveFile
-import com.starfall.gsadrive.ui.ExpandableMediaPlayer
+import com.starfall.gsadrive.feature.viewer.playback.MediaPagePlayback
+import com.starfall.gsadrive.feature.viewer.playback.PagedPlaybackPlayer
+import com.starfall.gsadrive.feature.viewer.playback.PlaybackSource
+import com.starfall.gsadrive.feature.viewer.playback.PlaybackSourceRegistry
+import com.starfall.gsadrive.feature.viewer.ui.ExpandableMediaPlayer
 import java.io.File
 import org.junit.Assert.*
 import org.junit.Rule

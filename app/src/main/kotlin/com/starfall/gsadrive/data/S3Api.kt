@@ -1,6 +1,8 @@
 package com.starfall.gsadrive.data
 
-import com.starfall.gsadrive.tr
+import com.starfall.gsadrive.R
+
+import com.starfall.gsadrive.shared.i18n.localized
 
 import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
 import aws.sdk.kotlin.services.s3.presigners.presignGetObject
@@ -120,7 +122,7 @@ object S3Api {
                 bucket = config.bucket
                 this.key = key
             }) { response ->
-                requireNotNull(response.body) { tr("S3 does not return file content.") }.writeToFile(target)
+                requireNotNull(response.body) { localized(R.string.s3_does_not_return_file_content) }.writeToFile(target)
             }
         }
     }

@@ -9,6 +9,8 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DriveLoadErrorTest {
+    @org.junit.Before fun setUpStrings() = com.starfall.gsadrive.shared.i18n.installTestStrings()
+    @org.junit.After fun clearStrings() = com.starfall.gsadrive.shared.i18n.clearTestStrings()
     @Test fun distinguishesDisabledApiFromPermissionFailure() {
         val details = GoogleJsonError().apply {
             errors = listOf(GoogleJsonError.ErrorInfo().apply { reason = "accessNotConfigured" })

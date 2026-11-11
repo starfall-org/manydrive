@@ -1,6 +1,8 @@
 package com.starfall.gsadrive.data
 
-import com.starfall.gsadrive.tr
+import com.starfall.gsadrive.R
+
+import com.starfall.gsadrive.shared.i18n.localized
 
 import org.json.JSONObject
 
@@ -53,7 +55,7 @@ object PhotosApi {
 
     internal fun contentUrl(item: JSONObject, video: Boolean): String {
         if (video) check(item.optJSONObject("mediaMetadata")?.optJSONObject("video")?.optString("status") == "READY") {
-            tr("This Google Photos video is not ready yet. Please try again later.")
+            localized(R.string.this_google_photos_video_is_not_ready_yet_please_try_again_later)
         }
         return item.getString("baseUrl") + if (video) "=dv" else "=w4096-h4096"
     }
@@ -81,7 +83,7 @@ object PhotosApi {
         request.headers.set("X-Goog-Upload-Content-Type", mimeType)
         val response = request.execute()
         val uploadToken = try { response.parseAsString().trim() } finally { response.disconnect() }
-        require(uploadToken.isNotEmpty()) { tr("Google Photos does not return upload token.") }
+        require(uploadToken.isNotEmpty()) { localized(R.string.google_photos_does_not_return_upload_token) }
         val body = JSONObject().put("newMediaItems", org.json.JSONArray().put(
             JSONObject().put("simpleMediaItem", JSONObject().put("uploadToken", uploadToken).put("fileName", filename))))
         albumId?.let { body.put("albumId", it) }
@@ -89,7 +91,7 @@ object PhotosApi {
             "https://photoslibrary.googleapis.com/v1/mediaItems:batchCreate", body.toString().toByteArray()).decodeToString())
             .getJSONArray("newMediaItemResults").getJSONObject(0)
         check(result.optJSONObject("status")?.optInt("code", 0) in listOf(null, 0) && result.has("mediaItem")) {
-            result.optJSONObject("status")?.optString("message") ?: tr("Cannot create Google Photos item.")
+            result.optJSONObject("status")?.optString("message") ?: localized(R.string.cannot_create_google_photos_item)
         }
     }
 }

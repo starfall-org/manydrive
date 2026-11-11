@@ -1,0 +1,204 @@
+package com.starfall.gsadrive.feature.settings
+
+import com.starfall.gsadrive.R
+
+import android.content.Intent
+import android.provider.Settings
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.starfall.gsadrive.shared.i18n.localized
+import com.starfall.gsadrive.shared.ui.theme.ThemeMode
+
+@Composable
+fun SettingsPage(
+    padding: PaddingValues,
+    mode: ThemeMode,
+    superDark: Boolean,
+    showHiddenSystemFiles: Boolean,
+    setMode: (ThemeMode) -> Unit,
+    setSuperDark: (Boolean) -> Unit,
+    setShowHiddenSystemFiles: (Boolean) -> Unit,
+    clearCache: () -> Unit
+) {
+    val context = LocalContext.current
+    var showThemeDialog by remember { mutableStateOf(false) }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(padding)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp)
+    ) {
+        Spacer(Modifier.height(20.dp))
+
+        SettingsSectionTitle(localized(R.string.notifications))
+        SettingsRow(
+            title = localized(R.string.notification_settings),
+            onClick = {
+                val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                context.startActivity(intent)
+            }
+        )
+
+        SettingsSectionTitle(localized(R.string.appearance))
+        SettingsRow(
+            title = localized(R.string.choose_theme),
+            subtitle = when (mode) {
+                ThemeMode.SYSTEM -> localized(R.string.use_system_default)
+                ThemeMode.LIGHT -> localized(R.string.light)
+                ThemeMode.DARK -> localized(R.string.dark)
+            },
+            onClick = { showThemeDialog = true }
+        )
+        SettingsSwitchRow(
+            title = localized(R.string.super_dark_mode),
+            subtitle = localized(R.string.use_a_pure_black_background_in_dark_mode),
+            checked = superDark,
+            onCheckedChange = setSuperDark
+        )
+
+        SettingsSectionTitle(localized(R.string.system_files))
+        SettingsSwitchRow(
+            title = localized(R.string.show_hidden_files),
+            subtitle = localized(R.string.show_files_and_folders_beginning_with_a_dot_in_system_files),
+            checked = showHiddenSystemFiles,
+            onCheckedChange = setShowHiddenSystemFiles
+        )
+
+        SettingsSectionTitle(localized(R.string.document_cache))
+        SettingsRow(
+            title = localized(R.string.clear_cache),
+            subtitle = localized(R.string.clear_cached_file_lists_and_data),
+            onClick = clearCache
+        )
+
+        Spacer(Modifier.height(40.dp))
+    }
+
+    if (showThemeDialog) {
+        AlertDialog(
+            onDismissRequest = { showThemeDialog = false },
+            title = { Text(localized(R.string.choose_theme)) },
+            text = {
+                Column {
+                    ThemeMode.entries.forEach { option ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    setMode(option)
+                                    showThemeDialog = false
+                                }
+                                .padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = mode == option, onClick = null)
+                            Text(
+                                when (option) {
+                                    ThemeMode.SYSTEM -> localized(R.string.system_default)
+                                    ThemeMode.LIGHT -> localized(R.string.light)
+                                    ThemeMode.DARK -> localized(R.string.dark)
+                                },
+                                modifier = Modifier.padding(start = 12.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showThemeDialog = false }) { Text(localized(R.string.cancel)) }
+            }
+        )
+    }
+}
+
+@Composable
+private fun SettingsSectionTitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 24.dp, bottom = 8.dp)
+    )
+}
+
+@Composable
+private fun SettingsRow(
+    title: String,
+    subtitle: String? = null,
+    onClick: () -> Unit
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 16.dp)
+    ) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        if (!subtitle.isNullOrBlank()) {
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}

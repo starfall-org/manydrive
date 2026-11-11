@@ -1,6 +1,8 @@
 package com.starfall.gsadrive.data
 
-import com.starfall.gsadrive.tr
+import com.starfall.gsadrive.R
+
+import com.starfall.gsadrive.shared.i18n.localized
 
 import org.json.JSONObject
 import java.security.KeyFactory
@@ -36,24 +38,24 @@ class ServiceAccountCredentials private constructor(
         const val MAX_JSON_BYTES = 128 * 1024
 
         fun parse(text: String): ServiceAccountCredentials {
-            require(text.toByteArray(Charsets.UTF_8).size <= MAX_JSON_BYTES) { tr("JSON file is too large.") }
+            require(text.toByteArray(Charsets.UTF_8).size <= MAX_JSON_BYTES) { localized(R.string.json_file_is_too_large) }
             val json = try { JSONObject(text) } catch (_: Exception) {
-                throw IllegalArgumentException(tr("File is not valid JSON."))
+                throw IllegalArgumentException(localized(R.string.file_is_not_valid_json))
             }
-            require(json.optString("type") == "service_account") { tr("Need a JSON key file of type service_account.") }
+            require(json.optString("type") == "service_account") { localized(R.string.need_a_json_key_file_of_type_service_account) }
             val email = json.optString("client_email").trim()
-            require(email.matches(Regex("[^\\s@]+@[^\\s@]+\\.gserviceaccount\\.com"))) { tr("JSON is missing a valid client_email.") }
-            require(json.optString("token_uri", TOKEN_URI) == TOKEN_URI) { tr("token_uri is not Google's OAuth server.") }
+            require(email.matches(Regex("[^\\s@]+@[^\\s@]+\\.gserviceaccount\\.com"))) { localized(R.string.json_is_missing_a_valid_client_email) }
+            require(json.optString("token_uri", TOKEN_URI) == TOKEN_URI) { localized(R.string.token_uri_is_not_google_s_oauth_server) }
             val pem = json.optString("private_key").trim()
             require(pem.startsWith("-----BEGIN PRIVATE KEY-----") && pem.endsWith("-----END PRIVATE KEY-----")) {
-                tr("JSON is missing PKCS#8 format private_key.")
+                localized(R.string.json_is_missing_pkcs_8_format_private_key)
             }
             val key = try {
                 val encoded = pem.removePrefix("-----BEGIN PRIVATE KEY-----").removeSuffix("-----END PRIVATE KEY-----")
                     .replace(Regex("\\s"), "")
                 KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(Base64.Default.decode(encoded))) as RSAPrivateKey
-            } catch (_: Exception) { throw IllegalArgumentException(tr("The RSA key in JSON is invalid.")) }
-            require(key.modulus.bitLength() >= 2048) { tr("RSA keys must be at least 2048 bits.") }
+            } catch (_: Exception) { throw IllegalArgumentException(localized(R.string.the_rsa_key_in_json_is_invalid)) }
+            require(key.modulus.bitLength() >= 2048) { localized(R.string.rsa_keys_must_be_at_least_2048_bits) }
             return ServiceAccountCredentials(email, pem, key, json.optString("private_key_id"))
         }
     }
@@ -66,9 +68,9 @@ class ServiceAccessToken(val value: String, val expiresAtSeconds: Long) {
 object ServiceAccountApi {
     fun accessToken(credentials: ServiceAccountCredentials): ServiceAccessToken {
         val token = credentials.sdkCredentials().refreshAccessToken()
-        val expiration = requireNotNull(token.expirationTime) { tr("Google does not return token expiration.") }
+        val expiration = requireNotNull(token.expirationTime) { localized(R.string.google_does_not_return_token_expiration) }
         check(token.tokenValue.isNotBlank()) {
-            tr("Google did not return a valid access token.")
+            localized(R.string.google_did_not_return_a_valid_access_token)
         }
         return ServiceAccessToken(token.tokenValue, expiration.time / 1000)
     }

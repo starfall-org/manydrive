@@ -1,6 +1,8 @@
 package com.starfall.gsadrive.data
 
-import com.starfall.gsadrive.tr
+import com.starfall.gsadrive.R
+
+import com.starfall.gsadrive.shared.i18n.localized
 
 import com.google.api.client.http.ByteArrayContent
 import com.google.api.client.http.InputStreamContent
@@ -25,9 +27,9 @@ data class DriveFile(
     val photosMediaId: String? = null
 ) {
     val isFolder get() = mimeType == "application/vnd.google-apps.folder"
-    val description get() = if (isFolder) tr("Folder") else {
-        val time = modifiedTime?.replace("T", " ")?.substringBefore(".") ?: tr("recently")
-        tr("Modified $time")
+    val description get() = if (isFolder) localized(R.string.folder) else {
+        val time = modifiedTime?.replace("T", " ")?.substringBefore(".") ?: localized(R.string.recently)
+        localized(R.string.modified_arg_1, time)
     }
 }
 
@@ -172,7 +174,7 @@ object DriveApi {
     private fun escapeQuery(value: String) = value.replace("\\", "\\\\").replace("'", "\\'")
 
     private fun GoogleFile.toDriveFile() = DriveFile(
-        id = id, name = name ?: tr("Untitled"), mimeType = mimeType.orEmpty(),
+        id = id, name = name ?: localized(R.string.untitled), mimeType = mimeType.orEmpty(),
         modifiedTime = modifiedTime?.toStringRfc3339(), size = getSize(),
         thumbnailUrl = thumbnailLink, webViewUrl = webViewLink, parents = parents.orEmpty(),
         trashed = trashed == true, sharedWithMeTime = sharedWithMeTime?.toStringRfc3339()

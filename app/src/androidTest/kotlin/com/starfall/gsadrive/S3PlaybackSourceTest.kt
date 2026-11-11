@@ -8,6 +8,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.starfall.gsadrive.data.DriveFile
 import com.starfall.gsadrive.data.S3Config
+import com.starfall.gsadrive.feature.viewer.playback.PlaybackSource
+import com.starfall.gsadrive.feature.viewer.playback.PlaybackSourceRegistry
+import com.starfall.gsadrive.feature.viewer.playback.resolvePlaybackDataSpec
 import java.io.File
 import java.io.IOException
 import org.junit.Assert.*

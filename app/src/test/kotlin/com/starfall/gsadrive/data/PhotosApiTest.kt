@@ -6,6 +6,8 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PhotosApiTest {
+    @org.junit.Before fun setUpStrings() = com.starfall.gsadrive.shared.i18n.installTestStrings()
+    @org.junit.After fun clearStrings() = com.starfall.gsadrive.shared.i18n.clearTestStrings()
     @Test fun followsAllPagesAndKeepsPhotosSeparateFromDrive() {
         val urls = mutableListOf<String>()
         val pages = ArrayDeque(listOf(
