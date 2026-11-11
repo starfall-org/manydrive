@@ -50,9 +50,9 @@ Use JDK 17 (`JAVA_HOME`) and point `ANDROID_HOME` or `local.properties` at Andro
 2. Upload your release keystore and enter its keystore password, key alias, and key password.
 3. Set its **Reference name** to `ManyDrive`, matching `environment.android_signing` in `codemagic.yaml`. If you already uploaded it with another reference name, update the YAML to match.
 4. Create a Codemagic environment variable group named `github_release`. Add `GITHUB_TOKEN` as a **Secret**: a GitHub fine-grained personal access token with access to `starfall-org/manydrive` and **Contents: Read and write** (approve it for the organization if required). The release scripts also accept the legacy `GH_TOKEN` name.
-5. Run the `android-release` workflow. After the signed APKs build successfully, it publishes each APK together with its `.sha1` checksum file to GitHub Release `v<versionName>` (for example, `v1.0.200`).
+5. Run the `android-release` workflow. After the signed APKs build successfully, it publishes each APK together with its `.sha1` checksum file to GitHub Release `v<versionName>` (for example, `v3.0.202`).
 
-Android versions are generated from Git history: `versionCode` is the result of `git rev-list --count HEAD`, and `versionName` is `1.0.<commit-count>` (for example, `1.0.200` at commit count 200). Codemagic fetches full history before building to prevent incorrect counts from shallow clones. Local builds should also use a full Git checkout.
+Android versions are generated from Git history: `versionCode` is the result of `git rev-list --count HEAD`, and `versionName` is `3.0.<commit-count>` (for example, `3.0.202` at commit count 202). Codemagic fetches full history before building to prevent incorrect counts from shallow clones. Local builds should also use a full Git checkout.
 
 The publishing script derives its tag from the APK output metadata. New releases target the build commit and remain drafts until APKs and SHA-1 checksum files upload successfully. On subsequent builds, it reuses an existing tag and release, replacing assets of the same name instead of moving the Git tag. If an existing tag points to a different commit, it warns and leaves the tag unchanged. If building from a tag, it must match `v<versionName>`. Debug builds do not publish releases or require a GitHub release token.
 
