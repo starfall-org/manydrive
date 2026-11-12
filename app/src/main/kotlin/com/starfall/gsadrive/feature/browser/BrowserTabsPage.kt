@@ -70,9 +70,6 @@ internal fun BrowserTabsPage(
                 }
             } else {
                 val globalSearch = pageSearch.results != null && pageSearch.query.isNotBlank()
-                val folderKey = pageModel.path.joinToString(separator = "|") { folder ->
-                    "${folder.id.length}:${folder.id}"
-                }
                 FileBrowserPage(
                     model = pageModel,
                     padding = PaddingValues(0.dp),
@@ -94,9 +91,7 @@ internal fun BrowserTabsPage(
                         localRootPath = state.localRootPath,
                         trash = if (page == 0) fileActions.trash else null,
                         trashMany = if (page == 0) fileActions.trashMany else null
-                    ),
-                    folderTransitionKey = folderKey,
-                    folderTransitionDepth = pageModel.path.size
+                    )
                 )
             }
         }

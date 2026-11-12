@@ -35,7 +35,6 @@ import com.starfall.gsadrive.shared.model.Model
 import com.starfall.gsadrive.shared.ui.CopyableError
 import com.starfall.gsadrive.shared.ui.FileGridCard
 import com.starfall.gsadrive.shared.ui.FileListRow
-import com.starfall.gsadrive.shared.ui.FolderZoomTransition
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -62,8 +61,6 @@ internal fun FileBrowserPage(
     browserKey: String = account?.key ?: "empty",
     showEmptyMessage: Boolean = account != null,
     localMenu: ((DriveFile) -> Unit)? = null,
-    folderTransitionKey: String? = null,
-    folderTransitionDepth: Int = 0,
     toolbarAction: (@Composable () -> Unit)? = null
 ) {
     val scopeKey = "${browserKey}:${if (shared) 1 else 0}:${model.path.lastOrNull()?.id.orEmpty()}"
@@ -320,17 +317,7 @@ internal fun FileBrowserPage(
                 }
             }
         }
-        if (folderTransitionKey != null) {
-            FolderZoomTransition(
-                key = folderTransitionKey,
-                depth = folderTransitionDepth,
-                modifier = Modifier.fillMaxSize()
-            ) {
-                fileListContent()
-            }
-        } else {
-            fileListContent()
-        }
+        fileListContent()
     }
     actionFile?.takeIf { account != null }?.let { selected ->
         FileActionsSheet(file = selected, account = requireNotNull(account), actions = actions, onDismiss = { actionFile = null })

@@ -223,9 +223,6 @@ internal fun SystemFilesPage(
             }
         } else {
             if (model.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-            val directoryDepth = remember(directory) {
-                File(directory).absolutePath.split(File.separatorChar).count { it.isNotEmpty() }
-            }
             FileBrowserPage(
                 model,
                 PaddingValues(0.dp),
@@ -238,8 +235,6 @@ internal fun SystemFilesPage(
                 browserKey = "local:$rootPath:$directory",
                 showEmptyMessage = true,
                 localMenu = { actionFile = it },
-                folderTransitionKey = directory,
-                folderTransitionDepth = directoryDepth,
                 toolbarAction = {
                     Box {
                         IconButton(onClick = { storageMenu = true }) {
