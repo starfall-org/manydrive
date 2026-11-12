@@ -31,7 +31,10 @@ internal fun pruneVideoFileCache(directory: File) {
     )
 }
 
-/** Persistent byte-range cache for streamed Google Photos/S3 videos. */
+/** Persistent byte-range cache for S3 videos.
+ * Google Photos `=dv` is transcoded and its URLs are short-lived; mixing cached
+ * ranges from different responses can corrupt the MP4 stream on seek.
+ */
 internal object VideoStreamCache {
     private var cache: SimpleCache? = null
     private var databaseProvider: StandaloneDatabaseProvider? = null
@@ -99,6 +102,11 @@ internal object VideoStreamCache {
     }
 }
 
+// Cache only streams with stable object bytes across requests. Photos `=dv` is
+// a transcoded download; always fetch it directly to avoid reusing stale spans.
+internal fun shouldCacheVideoBytes(accountType: String?, mimeType: String?): Boolean =
+    accountType == "S3" && mimeType?.startsWith("video/") == true
+
 private class RoutingVideoDataSourceFactory(
     private val upstreamFactory: DataSource.Factory,
     private val cacheFactory: DataSource.Factory
@@ -123,8 +131,7 @@ private class RoutingVideoDataSource(
     override fun open(dataSpec: DataSpec): Long {
         val mediaId = dataSpec.uri.takeIf { it.scheme == "manydrive" }?.getQueryParameter("id")
         val source = mediaId?.let(PlaybackSourceRegistry::get)
-        val streamCache = source?.file?.mimeType?.startsWith("video/") == true &&
-            source.accountType in setOf("PHOTOS", "S3")
+        val streamCache = shouldCacheVideoBytes(source?.accountType, source?.file?.mimeType)
         active = if (streamCache) cached else direct
         return requireNotNull(active).open(dataSpec)
     }

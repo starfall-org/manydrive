@@ -40,6 +40,18 @@ data class PlaybackSource(
     val cacheFile: File,
     val photosTokenProvider: (() -> String)? = null
 ) {
+    // Keep one Photos download URL for all byte-range requests during a playback window.
+    // A fresh PlaybackSource gets a fresh URL; URLs expire after about 60 minutes.
+    private val photosUrl = ExpiringPlaybackUrl()
+
+    fun photosVideoUrl(): String = photosUrl.getOrLoad {
+        PhotosApi.mediaUrl(
+            photosTokenProvider?.invoke() ?: accessToken
+                ?: throw IOException(localized(R.string.google_photos_authorization_is_required)),
+            requireNotNull(file.photosMediaId), true
+        )
+    }
+
     fun toMediaItem(): MediaItem = MediaItem.Builder()
         .setMediaId(mediaId)
         .setUri(Uri.Builder().scheme("manydrive").authority("media").appendQueryParameter("id", mediaId).build())
@@ -141,10 +153,7 @@ internal fun resolvePlaybackDataSpec(dataSpec: DataSpec): DataSpec {
     if (source.accountType == "CONTENT") return dataSpec.withUri(Uri.parse(source.file.id))
     if (source.accountType == "PHOTOS") {
         try {
-            val url = com.starfall.gsadrive.data.PhotosApi.mediaUrl(
-                source.photosTokenProvider?.invoke() ?: source.accessToken ?: throw IOException(localized(R.string.google_photos_authorization_is_required)),
-                requireNotNull(source.file.photosMediaId), true)
-            return dataSpec.withUri(Uri.parse(url))
+            return dataSpec.withUri(Uri.parse(source.photosVideoUrl()))
         } catch (error: Exception) {
             if (error is IOException) throw error
             throw IOException(error.message ?: localized(R.string.could_not_load_google_photos), error)
