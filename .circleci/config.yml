@@ -1,0 +1,81 @@
+version: 2.1
+
+jobs:
+  build-and-publish-release:
+    docker:
+      - image: cimg/android:2026.10.1
+    resource_class: large
+    environment:
+      # Supply these secrets through the `github-release` CircleCI context.
+      CM_KEYSTORE_PATH: /tmp/manydrive-release.jks
+      GITHUB_RELEASE_REPO: starfall-org/manydrive
+    steps:
+      - checkout
+
+      - run:
+          name: Fetch full Git history
+          command: |
+            set -euo pipefail
+            if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+              git fetch --unshallow --no-tags origin
+            fi
+
+      - run:
+          name: Install GitHub CLI
+          command: |
+            set -euo pipefail
+            if ! command -v gh >/dev/null 2>&1; then
+              type -p curl >/dev/null
+              curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+                | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+              sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+              echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+                | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+              sudo apt-get update
+              sudo apt-get install -y gh
+            fi
+            gh --version
+
+      - run:
+          name: Prepare release signing
+          command: |
+            set -euo pipefail
+            : "${CM_KEYSTORE_BASE64:?Set CM_KEYSTORE_BASE64 in the github-release context}"
+            : "${CM_KEYSTORE_PASSWORD:?Set CM_KEYSTORE_PASSWORD in the github-release context}"
+            : "${CM_KEY_ALIAS:?Set CM_KEY_ALIAS in the github-release context}"
+            : "${CM_KEY_PASSWORD:?Set CM_KEY_PASSWORD in the github-release context}"
+            printf '%s' "$CM_KEYSTORE_BASE64" | base64 --decode > "$CM_KEYSTORE_PATH"
+            chmod 600 "$CM_KEYSTORE_PATH"
+            test -s "$CM_KEYSTORE_PATH"
+            printf 'sdk.dir=%s\n' "${ANDROID_SDK_ROOT:-${ANDROID_HOME:?Android SDK is unavailable}}" > local.properties
+
+      - run:
+          name: Build signed release APK
+          command: |
+            set -euo pipefail
+            chmod +x gradlew
+            ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - run:
+          name: Publish GitHub release
+          command: |
+            set -euo pipefail
+            : "${GH_TOKEN:?Set GH_TOKEN in the github-release context}"
+            # The publish script validates CIRCLE_TAG against the version
+            # embedded in the APK when this workflow runs from a tag.
+            bash scripts/publish-github-release.sh
+
+      - store_artifacts:
+          path: app/build/outputs/apk/release
+          destination: release
+
+workflows:
+  release:
+    jobs:
+      - build-and-publish-release:
+          context: github-release
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v[0-9]+\.[0-9]+\.[0-9]+(?:[-.][A-Za-z0-9.-]+)?$/

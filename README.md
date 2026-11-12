@@ -62,6 +62,16 @@ Codemagic supplies `CM_KEYSTORE_PATH`, `CM_KEYSTORE_PASSWORD`, `CM_KEY_ALIAS`, a
 
 See [Codemagic's Android signing guide](https://docs.codemagic.io/yaml-code-signing/signing-android/).
 
+## Release builds on CircleCI
+
+The `.circleci/config.yml` workflow runs for tags matching `vX.Y.Z` (including prerelease suffixes), builds a signed release APK, and publishes it to the GitHub Release with the existing `scripts/publish-github-release.sh` script. Create a CircleCI context named `github-release` and add these secret environment variables:
+
+- `GH_TOKEN`: GitHub token with **Contents: Read and write** for `starfall-org/manydrive`.
+- `CM_KEYSTORE_BASE64`: base64-encoded release keystore (`base64 -w 0 release.jks`).
+- `CM_KEYSTORE_PASSWORD`, `CM_KEY_ALIAS`, and `CM_KEY_PASSWORD`: release signing credentials.
+
+Push a tag that matches the version generated from the full Git history, for example `v3.0.202`. CircleCI fetches full history before building and rejects a tag that does not match the APK `versionName`.
+
 ## Configure Google sign-in and Drive
 
 1. In Google Cloud Console, enable **Google Drive API** and **Photos Library API** for the project.

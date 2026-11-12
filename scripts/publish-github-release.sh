@@ -16,8 +16,9 @@ if [[ -n "${MANYDRIVE_RELEASE_TAG:-}" && "$MANYDRIVE_RELEASE_TAG" != "$tag" ]]; 
   echo "Prepared release tag $MANYDRIVE_RELEASE_TAG does not match built app version $tag." >&2
   exit 1
 fi
-if [[ -n "${CM_TAG:-}" && "$CM_TAG" != "$tag" ]]; then
-  echo "Build tag $CM_TAG does not match app version $tag." >&2
+BUILD_TAG="${CIRCLE_TAG:-${CM_TAG:-}}"
+if [[ -n "$BUILD_TAG" && "$BUILD_TAG" != "$tag" ]]; then
+  echo "Build tag $BUILD_TAG does not match app version $tag." >&2
   exit 1
 fi
 commit="$(git rev-parse HEAD)"
