@@ -14,3 +14,5 @@ local.properties
 *.swp
 *.log
 file_4.jpg
+.env
+manydrive.jks
