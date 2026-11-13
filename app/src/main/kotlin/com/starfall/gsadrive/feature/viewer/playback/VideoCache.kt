@@ -31,9 +31,9 @@ internal fun pruneVideoFileCache(directory: File) {
     )
 }
 
-/** Persistent byte-range cache for S3 videos.
- * Google Photos `=dv` is transcoded and its URLs are short-lived; mixing cached
- * ranges from different responses can corrupt the MP4 stream on seek.
+/** Persistent byte-range cache for Google Photos and S3 videos.
+ * Photos bytes have no time-based expiry; they stay on disk until LRU eviction
+ * or an explicit cache clear, even after the signed playback URL expires.
  */
 internal object VideoStreamCache {
     private var cache: SimpleCache? = null
@@ -63,8 +63,11 @@ internal object VideoStreamCache {
         lastPruneAt = now
         val cutoff = now - VIDEO_CACHE_TTL_MS
         cache.keys.toList().forEach { key ->
+            // Old S3 entries retain the existing 7-day TTL. Photos entries do not:
+            // replaying a fully cached video must not require a network request.
+            if (isPersistentPhotosVideoKey(key)) return@forEach
             cache.getCachedSpans(key).toList().forEach { span ->
-                if (span.lastTouchTimestamp > 0L && span.lastTouchTimestamp < cutoff) {
+                if (shouldPruneCachedVideoSpan(key, span.lastTouchTimestamp, cutoff)) {
                     runCatching { cache.removeSpan(span) }
                 }
             }
@@ -78,8 +81,9 @@ internal object VideoStreamCache {
             .setCache(simpleCache)
             .setUpstreamDataSourceFactory(upstreamFactory)
             .setCacheKeyFactory { dataSpec ->
-                val mediaId = dataSpec.uri.getQueryParameter("id")
-                if (mediaId.isNullOrBlank()) dataSpec.key ?: dataSpec.uri.toString() else "video:$mediaId"
+                val mediaId = dataSpec.uri.takeIf { it.scheme == "manydrive" }?.getQueryParameter("id")
+                cacheKeyForVideo(mediaId?.let(PlaybackSourceRegistry::get), mediaId,
+                    dataSpec.key ?: dataSpec.uri.toString())
             }
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         return RoutingVideoDataSourceFactory(upstreamFactory, cachedFactory)
@@ -102,10 +106,26 @@ internal object VideoStreamCache {
     }
 }
 
-// Cache only streams with stable object bytes across requests. Photos `=dv` is
-// a transcoded download; always fetch it directly to avoid reusing stale spans.
+// Keep the cache enabled for Photos, so cache hits do not open the expiring
+// Google Photos URL. Missing byte ranges alone are downloaded over the network.
 internal fun shouldCacheVideoBytes(accountType: String?, mimeType: String?): Boolean =
-    accountType == "S3" && mimeType?.startsWith("video/") == true
+    accountType in setOf("PHOTOS", "S3") && mimeType?.startsWith("video/") == true
+
+// Photos uses a new namespace: never replay old potentially mixed byte ranges
+// created by the earlier unversioned key. Media identity and creation time keep
+// cache hits stable across app restarts, without tying them to expiring URLs.
+internal fun cacheKeyForVideo(source: PlaybackSource?, mediaId: String?, fallback: String): String =
+    when {
+        source?.accountType == "PHOTOS" ->
+            "photos:v2:${source.mediaId}:${source.file.modifiedTime.orEmpty()}:${source.file.size ?: -1L}"
+        mediaId.isNullOrBlank() -> fallback
+        else -> "video:$mediaId"
+    }
+
+internal fun isPersistentPhotosVideoKey(key: String): Boolean = key.startsWith("photos:v2:")
+
+internal fun shouldPruneCachedVideoSpan(key: String, lastTouchMs: Long, cutoffMs: Long): Boolean =
+    !isPersistentPhotosVideoKey(key) && lastTouchMs > 0L && lastTouchMs < cutoffMs
 
 private class RoutingVideoDataSourceFactory(
     private val upstreamFactory: DataSource.Factory,

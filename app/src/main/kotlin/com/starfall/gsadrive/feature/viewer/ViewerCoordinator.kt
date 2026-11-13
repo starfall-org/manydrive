@@ -263,7 +263,9 @@ internal class ViewerCoordinator(
         val browsingIndex = browsingQueue.indexOfFirst { it.id == file.id }.coerceAtLeast(0)
         val config = if (account.type == AccountType.S3) s3Config(account) else null
         val token = if (file.photosMediaId != null) photosAccessToken() else if (account.type == AccountType.S3) null else accessToken()
-        if (account.type != AccountType.S3 && token == null) {
+        // Photos can play fully cached videos without a current access token.
+        // The streaming DataSource requests authorization only for missing bytes.
+        if (account.type != AccountType.S3 && file.photosMediaId == null && token == null) {
             state = ViewerState(file = file, error = localized(R.string.access_permissions_need_to_be_granted_before_playing_media))
             return
         }
